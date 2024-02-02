@@ -276,7 +276,7 @@ impl Lexer {
                 }
                 '"' => self.read_string_literal()?,
                 '\'' => self.read_char_literal()?,
-                '0'..='9' | '.' => self.read_number()?,
+                '0'..='9' => self.read_number()?,
                 c => self.read_identifier(c),
             },
             None => Token {

@@ -1,7 +1,10 @@
 use anyhow::Result;
 
 use super::{
-    scope::Scope, statement::Statement, value::{FunctionValue, Value}, Interpreter
+    scope::Scope,
+    statement::Statement,
+    value::{ItpFunctionParameters, ItpFunctionValue, ItpTypeValue, ItpValue},
+    Interpreter,
 };
 use crate::ast::Ast;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
@@ -38,13 +41,22 @@ fn fn_macro(ast: &[Ast], itpr: &mut Interpreter) -> Result<Vec<Statement>> {
         statements.extend(statement);
     }
 
-    let function = Value::Function(FunctionValue {
+    let mut args = args
+        .iter()
+        .map(|arg| {
+            arg.as_identifier()
+                .map(|id| (id.name.clone(), ItpTypeValue::Float))
+        })
+        .collect::<Result<Vec<(String, ItpTypeValue)>>>()?;
+
+    let function = ItpValue::Function(ItpFunctionValue {
         name: name.name.clone(),
-        parameters: args
-            .iter()
-            .map(|arg| arg.as_identifier().map(|id| id.name.clone()))
-            .collect::<Result<Vec<String>>>()?,
+        parameters: ItpFunctionParameters {
+            parameters: args,
+            variadic: false,
+        },
         body: statements,
+        return_type: ItpTypeValue::Float,
     });
 
     let function = Rc::new(function);

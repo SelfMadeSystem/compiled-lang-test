@@ -1,4 +1,4 @@
-use crate::tokens::Identifier;
+use crate::tokens::{Identifier, Token};
 use anyhow::{anyhow, Error, Result};
 
 #[derive(Debug, PartialEq, Clone)]

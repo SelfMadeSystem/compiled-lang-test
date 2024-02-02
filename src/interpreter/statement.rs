@@ -1,6 +1,6 @@
 use crate::tokens::Identifier;
 
-use super::value::Value;
+use super::value::ItpValue;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Statement {
@@ -15,11 +15,11 @@ pub enum StatementKind {
     // },
     CallAssign {
         name: Identifier,
-        arguments: Vec<Value>,
+        arguments: Vec<ItpValue>,
         assign: Identifier,
     },
     Value {
-        value: Value,
+        value: ItpValue,
     },
     // Jump {
     //     target: String,
@@ -30,6 +30,6 @@ pub enum StatementKind {
     //     else_target: String,
     // },
     Return {
-        value: Value,
+        value: ItpValue,
     },
 }

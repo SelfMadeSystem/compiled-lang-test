@@ -1,4 +1,4 @@
-use super::value::Value;
+use super::value::ItpValue;
 use anyhow::{anyhow, Result};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -6,8 +6,8 @@ use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Scope {
-    parent: Option<Rc<RefCell<Scope>>>,
-    bindings: HashMap<String, Rc<Value>>,
+    pub parent: Option<Rc<RefCell<Scope>>>,
+    pub bindings: HashMap<String, Rc<ItpValue>>,
 }
 
 impl Scope {
@@ -25,7 +25,7 @@ impl Scope {
         }
     }
 
-    pub fn get(&self, name: &str) -> Option<Rc<Value>> {
+    pub fn get(&self, name: &str) -> Option<Rc<ItpValue>> {
         if let Some(value) = self.bindings.get(name) {
             return Some(value.clone());
         }
@@ -37,7 +37,7 @@ impl Scope {
         None
     }
 
-    pub fn set(&mut self, name: String, value: Rc<Value>) -> Result<()> {
+    pub fn set(&mut self, name: String, value: Rc<ItpValue>) -> Result<()> {
         if self.bindings.contains_key(&name) {
             return Err(anyhow!("Variable already defined"));
         }
@@ -55,7 +55,8 @@ impl Scope {
             new_name = format!("temp_{}", i);
         }
 
-        self.bindings.insert(new_name.clone(), Rc::new(Value::Temp));
+        self.bindings
+            .insert(new_name.clone(), Rc::new(ItpValue::Temp));
 
         new_name
     }

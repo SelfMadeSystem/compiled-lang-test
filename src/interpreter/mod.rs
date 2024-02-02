@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 
 use crate::{
     ast::{Ast, AstKind},
@@ -11,18 +11,18 @@ use self::{
     macros::Macro,
     scope::Scope,
     statement::{Statement, StatementKind},
-    value::{ConstantValue, Value},
+    value::{ItpConstantValue, ItpValue},
 };
 
-mod macros;
-mod scope;
-mod statement;
-mod value;
+pub mod macros;
+pub mod scope;
+pub mod statement;
+pub mod value;
 
 #[derive(Debug)]
 pub struct Interpreter {
-    scope: Rc<RefCell<Scope>>,
-    macros: HashMap<String, Macro>,
+    pub scope: Rc<RefCell<Scope>>,
+    pub macros: HashMap<String, Macro>,
 }
 
 impl Interpreter {
@@ -71,7 +71,7 @@ impl Interpreter {
                             arguments.push(value);
                         }
                         StatementKind::CallAssign { ref assign, .. } => {
-                            arguments.push(Value::Named(assign.clone()));
+                            arguments.push(ItpValue::Named(assign.clone()));
                             statements.push(last);
                         }
                         _ => return ast.err("Invalid argument"),
@@ -82,9 +82,7 @@ impl Interpreter {
                     kind: StatementKind::CallAssign {
                         name: name.clone(),
                         arguments,
-                        assign: Identifier::new_variable(
-                            &scope.borrow_mut().new_temp_name(),
-                        ),
+                        assign: Identifier::new_variable(&scope.borrow_mut().new_temp_name()),
                     },
                 });
 
@@ -92,27 +90,27 @@ impl Interpreter {
             }
             AstKind::Int(i) => Ok(vec![Statement {
                 kind: StatementKind::Value {
-                    value: Value::Constant(ConstantValue::Int(*i)),
+                    value: ItpValue::Constant(ItpConstantValue::Int(*i)),
                 },
             }]),
             AstKind::Float(f) => Ok(vec![Statement {
                 kind: StatementKind::Value {
-                    value: Value::Constant(ConstantValue::Float(*f)),
+                    value: ItpValue::Constant(ItpConstantValue::Float(*f)),
                 },
             }]),
             AstKind::Bool(b) => Ok(vec![Statement {
                 kind: StatementKind::Value {
-                    value: Value::Constant(ConstantValue::Bool(*b)),
+                    value: ItpValue::Constant(ItpConstantValue::Bool(*b)),
                 },
             }]),
             AstKind::Char(c) => Ok(vec![Statement {
                 kind: StatementKind::Value {
-                    value: Value::Constant(ConstantValue::Char(*c)),
+                    value: ItpValue::Constant(ItpConstantValue::Char(*c)),
                 },
             }]),
             AstKind::String(s) => Ok(vec![Statement {
                 kind: StatementKind::Value {
-                    value: Value::Constant(ConstantValue::String(s.clone())),
+                    value: ItpValue::Constant(ItpConstantValue::String(s.clone())),
                 },
             }]),
             AstKind::Identifier(id) => {
@@ -127,7 +125,7 @@ impl Interpreter {
                 }
                 Ok(vec![Statement {
                     kind: StatementKind::Value {
-                        value: Value::Named(id.clone()),
+                        value: ItpValue::Named(id.clone()),
                     },
                 }])
             }
@@ -146,14 +144,14 @@ impl Interpreter {
                             values.push(value);
                         }
                         StatementKind::CallAssign { assign, .. } => {
-                            values.push(Value::Named(assign));
+                            values.push(ItpValue::Named(assign));
                         }
                         _ => return ast.err("Invalid argument"),
                     }
                 }
                 Ok(vec![Statement {
                     kind: StatementKind::Value {
-                        value: Value::Constant(ConstantValue::Array(values)),
+                        value: ItpValue::Constant(ItpConstantValue::Array(values)),
                     },
                 }])
             }

@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 pub const DELIMITERS: &str = "(){}[],:;";
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Token {
     pub kind: TokenKind,
     pub line: usize,
@@ -15,7 +15,7 @@ impl Display for Token {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum TokenKind {
     Int(i64),
     Float(f64),
