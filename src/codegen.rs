@@ -52,13 +52,24 @@ impl<'ctx> CodeGen<'ctx> {
         // AddressSpace::from(0) is the generic address space
         // Source: https://llvm.org/doxygen/NVPTXBaseInfo_8h_source.html I guess?
         let i8_ptr_type = self.context.i8_type().ptr_type(AddressSpace::from(0));
-        let f64_type = self.context.f64_type();
         let scanf_type = self
             .context
             .void_type()
-            .fn_type(&[i8_ptr_type.into(), f64_type.into()], true);
+            .fn_type(&[i8_ptr_type.into()], true);
 
         self.module.add_function("scanf", scanf_type, None);
+
+        Ok(())
+    }
+
+    fn declare_printf(&self) -> Result<(), BuilderError> {
+        let i8_ptr_type = self.context.i8_type().ptr_type(AddressSpace::from(0));
+        let printf_type = self
+            .context
+            .void_type()
+            .fn_type(&[i8_ptr_type.into()], true);
+
+        self.module.add_function("printf", printf_type, None);
 
         Ok(())
     }
@@ -99,6 +110,47 @@ impl<'ctx> CodeGen<'ctx> {
             }
         }
     }
+
+    /// Main function just calls the `ast` function and prints the result.
+    fn create_main_function(&self) -> Result<(), BuilderError> {
+        self.declare_printf()?;
+
+        let void_type = self.context.void_type();
+        let fn_type = void_type.fn_type(&[], false);
+        let function = self.module.add_function("main", fn_type, None);
+        let basic_block = self.context.append_basic_block(function, "entry");
+
+        self.builder.position_at_end(basic_block);
+
+        let ast_fn = self
+            .module
+            .get_function("ast")
+            .ok_or_else(|| BuilderError::GEPIndex)?;
+
+        let result = self.builder.build_call(ast_fn, &[], "result")?;
+        
+        let result_value = match result.try_as_basic_value().left() {
+            Some(value) => value,
+            None => return Err(BuilderError::GEPIndex),
+        };
+
+        let format_string = self.builder.build_global_string_ptr("%lf\n\0", "fmt")?;
+
+        let printf_fn = self
+            .module
+            .get_function("printf")
+            .ok_or_else(|| BuilderError::GEPIndex)?;
+
+        self.builder.build_call(
+            printf_fn,
+            &[format_string.as_pointer_value().into(), result_value.into()],
+            "printf",
+        )?;
+
+        self.builder.build_return(None)?;
+
+        Ok(())
+    }
 }
 
 pub fn run_ast(ast: &Ast) -> Result<f64> {
@@ -130,6 +182,29 @@ pub fn compile_to_llvm_ir(ast: &Ast) -> Result<String> {
     };
 
     codegen.compile_ast(&ast)?;
+    codegen.create_main_function()?;
 
     Ok(codegen.module.print_to_string().to_string())
+}
+
+pub fn compile_to_file(ast: &Ast, filename: &str) -> Result<()> {
+    let context = Context::create();
+    let module = context.create_module("sum");
+    let codegen = CodeGen {
+        context: &context,
+        module,
+        builder: context.create_builder(),
+    };
+
+    codegen.compile_ast(&ast)?;
+    codegen.create_main_function()?;
+
+    if codegen
+        .module
+        .write_bitcode_to_path(std::path::Path::new(filename))
+    {
+        Ok(())
+    } else {
+        Err(anyhow!("Unable to write bitcode to file"))
+    }
 }
