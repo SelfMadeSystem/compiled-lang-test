@@ -1,4 +1,4 @@
-use super::ast::{Ast, AstKind, BinaryOp};
+use super::ast::{Ast, AstKind};
 use anyhow::{anyhow, Result};
 use inkwell::builder::{Builder, BuilderError};
 use inkwell::context::Context;
@@ -13,27 +13,29 @@ use inkwell::{AddressSpace, OptimizationLevel};
 /// do `unsafe` operations internally.
 type AstFunc = unsafe extern "C" fn() -> f64;
 
-struct CodeGen<'ctx> {
-    context: &'ctx Context,
-    module: Module<'ctx>,
-    builder: Builder<'ctx>,
+pub struct CodeGen<'ctx> {
+    pub context: &'ctx Context,
+    pub module: Module<'ctx>,
+    pub builder: Builder<'ctx>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
-    fn jit_compile_ast(&self, ast: &Ast) -> Option<JitFunction<AstFunc>> {
+    fn jit_compile_ast(&self, ast: &Vec<Ast>) -> Result<JitFunction<AstFunc>> {
         let execution_engine = self
             .module
             .create_jit_execution_engine(OptimizationLevel::None)
-            .ok()?;
+            .map_err(|e| anyhow!(e.to_string()))?;
 
-        self.compile_ast(&ast).ok()?;
+        self.compile_ast(&ast)?;
 
-        unsafe { execution_engine.get_function("ast").ok() }
+        unsafe {
+            execution_engine
+                .get_function("main")
+                .map_err(|e| anyhow!(e.to_string()))
+        }
     }
 
-    fn compile_ast(&self, ast: &Ast) -> Result<(), BuilderError> {
-        self.declare_scanf()?;
-
+    fn compile_ast(&self, ast: &Vec<Ast>) -> Result<()> {
         let f64_type = self.context.f64_type();
         let fn_type = f64_type.fn_type(&[], false);
         let function = self.module.add_function("ast", fn_type, None);
@@ -48,21 +50,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn declare_scanf(&self) -> Result<(), BuilderError> {
-        // AddressSpace::from(0) is the generic address space
-        // Source: https://llvm.org/doxygen/NVPTXBaseInfo_8h_source.html I guess?
-        let i8_ptr_type = self.context.i8_type().ptr_type(AddressSpace::from(0));
-        let scanf_type = self
-            .context
-            .void_type()
-            .fn_type(&[i8_ptr_type.into()], true);
-
-        self.module.add_function("scanf", scanf_type, None);
-
-        Ok(())
-    }
-
-    fn declare_printf(&self) -> Result<(), BuilderError> {
+    /* fn declare_printf(&self) -> Result<(), BuilderError> {
         let i8_ptr_type = self.context.i8_type().ptr_type(AddressSpace::from(0));
         let printf_type = self
             .context
@@ -72,7 +60,7 @@ impl<'ctx> CodeGen<'ctx> {
         self.module.add_function("printf", printf_type, None);
 
         Ok(())
-    }
+    } */
 
     fn compile_ast_node(&self, ast: &Ast) -> Result<FloatValue, BuilderError> {
         match &ast.kind {
@@ -110,47 +98,6 @@ impl<'ctx> CodeGen<'ctx> {
             }
         }
     }
-
-    /// Main function just calls the `ast` function and prints the result.
-    fn create_main_function(&self) -> Result<(), BuilderError> {
-        self.declare_printf()?;
-
-        let void_type = self.context.void_type();
-        let fn_type = void_type.fn_type(&[], false);
-        let function = self.module.add_function("main", fn_type, None);
-        let basic_block = self.context.append_basic_block(function, "entry");
-
-        self.builder.position_at_end(basic_block);
-
-        let ast_fn = self
-            .module
-            .get_function("ast")
-            .ok_or_else(|| BuilderError::GEPIndex)?;
-
-        let result = self.builder.build_call(ast_fn, &[], "result")?;
-        
-        let result_value = match result.try_as_basic_value().left() {
-            Some(value) => value,
-            None => return Err(BuilderError::GEPIndex),
-        };
-
-        let format_string = self.builder.build_global_string_ptr("%lf\n\0", "fmt")?;
-
-        let printf_fn = self
-            .module
-            .get_function("printf")
-            .ok_or_else(|| BuilderError::GEPIndex)?;
-
-        self.builder.build_call(
-            printf_fn,
-            &[format_string.as_pointer_value().into(), result_value.into()],
-            "printf",
-        )?;
-
-        self.builder.build_return(None)?;
-
-        Ok(())
-    }
 }
 
 pub fn run_ast(ast: &Ast) -> Result<f64> {
@@ -172,7 +119,7 @@ pub fn run_ast(ast: &Ast) -> Result<f64> {
     }
 }
 
-pub fn compile_to_llvm_ir(ast: &Ast) -> Result<String> {
+pub fn compile_to_llvm_ir(ast: &Vec<Ast>) -> Result<String> {
     let context = Context::create();
     let module = context.create_module("sum");
     let codegen = CodeGen {
@@ -182,7 +129,6 @@ pub fn compile_to_llvm_ir(ast: &Ast) -> Result<String> {
     };
 
     codegen.compile_ast(&ast)?;
-    codegen.create_main_function()?;
 
     Ok(codegen.module.print_to_string().to_string())
 }
@@ -197,7 +143,6 @@ pub fn compile_to_file(ast: &Ast, filename: &str) -> Result<()> {
     };
 
     codegen.compile_ast(&ast)?;
-    codegen.create_main_function()?;
 
     if codegen
         .module

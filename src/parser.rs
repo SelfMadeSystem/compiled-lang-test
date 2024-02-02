@@ -1,5 +1,3 @@
-use crate::ast::BinaryOp;
-
 use super::ast::{Ast, AstKind};
 use super::tokens::{Token, TokenKind};
 use anyhow::{anyhow, Result};
@@ -25,167 +23,234 @@ impl Parser {
         self.position += 1;
     }
 
-    fn parse_number(&mut self) -> Result<Ast> {
+    fn parse_literal(&mut self) -> Result<Ast> {
         let token = self
             .current_token()
             .ok_or_else(|| anyhow!("Unexpected EOF"))?;
         let line = token.line;
         let column = token.column;
-        let number = token.kind.number().ok_or_else(|| {
-            anyhow!(
-                "Expected number at line {}, column {}. Found: {}",
+
+        match &token.kind {
+            TokenKind::Int(n) => {
+                let n = *n;
+                self.advance();
+                Ok(Ast {
+                    kind: AstKind::Int(n),
+                    line,
+                    column,
+                })
+            }
+            TokenKind::Float(n) => {
+                let n = *n;
+                self.advance();
+                Ok(Ast {
+                    kind: AstKind::Float(n),
+                    line,
+                    column,
+                })
+            }
+            TokenKind::Bool(b) => {
+                let b = *b;
+                self.advance();
+                Ok(Ast {
+                    kind: AstKind::Bool(b),
+                    line,
+                    column,
+                })
+            }
+            TokenKind::Char(c) => {
+                let c = *c;
+                self.advance();
+                Ok(Ast {
+                    kind: AstKind::Char(c),
+                    line,
+                    column,
+                })
+            }
+            TokenKind::String(s) => {
+                let s = s.clone();
+                self.advance();
+                Ok(Ast {
+                    kind: AstKind::String(s),
+                    line,
+                    column,
+                })
+            }
+            TokenKind::Identifier(id) => {
+                let id = id.clone();
+                self.advance();
+                Ok(Ast {
+                    kind: AstKind::Identifier(id),
+                    line,
+                    column,
+                })
+            }
+            _ => Err(anyhow!(
+                "Expected literal at line {}, column {}. Found: {}",
                 line,
                 column,
-                token.kind_string()
-            )
-        })?;
+                token
+            )),
+        }
+    }
+
+    fn parse_array(&mut self) -> Result<Ast> {
+        let token = self
+            .current_token()
+            .ok_or_else(|| anyhow!("Unexpected EOF"))?;
+        let line = token.line;
+        let column = token.column;
+
+        if token.kind != TokenKind::Delimiter('[') {
+            return Err(anyhow!(
+                "Expected '[' at line {}, column {}. Found: {}",
+                line,
+                column,
+                token
+            ));
+        }
 
         self.advance();
+
+        let mut elements = Vec::new();
+
+        loop {
+            let token = self
+                .current_token()
+                .ok_or_else(|| anyhow!("Unexpected EOF"))?;
+            let line = token.line;
+            let column = token.column;
+
+            if token.kind == TokenKind::Delimiter(']') {
+                self.advance();
+                break;
+            }
+
+            let element = self.parse_expression()?;
+            elements.push(element);
+
+            let token = self
+                .current_token()
+                .ok_or_else(|| anyhow!("Unexpected EOF"))?;
+            if token.kind == TokenKind::Delimiter(']') {
+                self.advance();
+                break;
+            } else if token.kind != TokenKind::Delimiter(',') {
+                return Err(anyhow!(
+                    "Expected ',' or ']' at line {}, column {}. Found: {}",
+                    line,
+                    column,
+                    token
+                ));
+            }
+
+            self.advance();
+        }
+
         Ok(Ast {
-            kind: AstKind::Number(number),
+            kind: AstKind::Array(elements),
             line,
             column,
         })
     }
 
-    fn parse_primary(&mut self) -> Result<Ast> {
-        match self
+    fn parse_call(&mut self) -> Result<Ast> {
+        let token = self
             .current_token()
-            .ok_or_else(|| anyhow!("Unexpected EOF"))?
-            .kind
-        {
-            TokenKind::Number(_) => self.parse_number(),
-            TokenKind::Input => {
-                let token = self.current_token().unwrap();
-                let line = token.line;
-                let column = token.column;
-                self.advance();
-                Ok(Ast {
-                    kind: AstKind::Input,
-                    line,
-                    column,
-                })
-            }
-            TokenKind::LParen => {
-                self.advance();
-                let expr = self.parse_expr(0)?;
-                if self
-                    .current_token()
-                    .ok_or_else(|| anyhow!("Unexpected EOF"))?
-                    .kind
-                    != TokenKind::RParen
-                {
-                    return Err(anyhow!(
-                        "Expected ')' at line {}, column {}",
-                        expr.line,
-                        expr.column
-                    ));
-                }
-                self.advance();
-                Ok(expr)
-            }
-            TokenKind::Minus => {
-                self.advance();
-                let expr = self.parse_primary()?;
-                match expr.kind {
-                    AstKind::Number(n) => Ok(Ast {
-                        kind: AstKind::Number(-n),
-                        line: expr.line,
-                        column: expr.column,
-                    }),
-                    AstKind::Input => Ok(Ast {
-                        kind: AstKind::BinaryOp {
-                            op: BinaryOp::Mul,
-                            lhs: Box::new(Ast {
-                                kind: AstKind::Number(-1.0),
-                                line: expr.line,
-                                column: expr.column,
-                            }),
-                            rhs: Box::new(Ast {
-                                kind: AstKind::Input,
-                                line: expr.line,
-                                column: expr.column,
-                            }),
-                        },
-                        line: expr.line,
-                        column: expr.column,
-                    }),
-                    AstKind::BinaryOp { op, lhs, rhs } => {
-                        Ok(Ast {
-                            kind: AstKind::BinaryOp {
-                                op: BinaryOp::Sub,
-                                lhs: Box::new(Ast {
-                                    kind: AstKind::Number(0.0),
-                                    line: expr.line,
-                                    column: expr.column,
-                                }),
-                                rhs: Box::new(Ast {
-                                    kind: AstKind::BinaryOp { op, lhs, rhs },
-                                    line: expr.line,
-                                    column: expr.column,
-                                }),
-                            },
-                            line: expr.line,
-                            column: expr.column,
-                        })
-                    }
-                }
-            }
-            _ => {
-                let token = self
-                    .current_token()
-                    .ok_or_else(|| anyhow!("Unexpected EOF"))?;
-                Err(anyhow!(
-                    "Unexpected '(', Number, or '-' at line {}, column {}. Found: {}",
+            .ok_or_else(|| anyhow!("Unexpected EOF"))?;
+        let line = token.line;
+        let column = token.column;
+
+        if token.kind != TokenKind::Delimiter('(') {
+            return Err(anyhow!(
+                "Expected '(' at line {}, column {}. Found: {}",
+                line,
+                column,
+                token
+            ));
+        }
+
+        self.advance();
+
+        let name = match self.current_token() {
+            Some(Token {
+                kind: TokenKind::Identifier(name),
+                ..
+            }) => name.clone(),
+            Some(token) => {
+                return Err(anyhow!(
+                    "Expected identifier at line {}, column {}. Found: {}",
                     token.line,
                     token.column,
-                    token.kind_string()
+                    token
                 ))
             }
-        }
-    }
+            None => return Err(anyhow!("Unexpected EOF")),
+        };
 
-    fn parse_expr(&mut self, precedence: usize) -> Result<Ast> {
-        let mut lhs = self.parse_primary()?;
+        self.advance();
 
-        while let Some(token) = self.current_token() {
-            if token.kind == TokenKind::RParen {
+        let mut args = Vec::new();
+
+        loop {
+            let token = self
+                .current_token()
+                .ok_or_else(|| anyhow!("Unexpected EOF"))?;
+
+            if token.kind == TokenKind::Delimiter(')') {
+                self.advance();
                 break;
             }
 
-            let line = token.line;
-            let column = token.column;
-            let op = token.kind.binary_op().ok_or_else(|| {
-                anyhow!(
-                    "Expected binary operator at line {}, column {}. Found: {}",
-                    line,
-                    column,
-                    token.kind_string()
-                )
-            })?;
-            let token_precedence = op.precedence();
+            let arg = self.parse_expression()?;
+            args.push(arg);
 
-            if token_precedence < precedence {
-                return Ok(lhs);
+            let token = self
+                .current_token()
+                .ok_or_else(|| anyhow!("Unexpected EOF"))?;
+            if token.kind == TokenKind::Delimiter(',') {
+                self.advance();
             }
-
-            self.advance();
-            let rhs = self.parse_expr(token_precedence + 1)?;
-            lhs = Ast {
-                kind: AstKind::BinaryOp {
-                    op,
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                },
-                line,
-                column,
-            };
         }
 
-        Ok(lhs)
+        Ok(Ast {
+            kind: AstKind::Call { name, args },
+            line,
+            column,
+        })
     }
 
-    pub fn parse(&mut self) -> Result<Ast> {
-        self.parse_expr(0)
+    fn parse_expression(&mut self) -> Result<Ast> {
+        let token = self
+            .current_token()
+            .ok_or_else(|| anyhow!("Unexpected EOF"))?;
+        let line = token.line;
+        let column = token.column;
+
+        match &token.kind {
+            TokenKind::Delimiter('[') => self.parse_array(),
+            TokenKind::Delimiter('(') => self.parse_call(),
+            t if t.is_literal() => self.parse_literal(),
+            _ => Err(anyhow!(
+                "Expected expression at line {}, column {}. Found: {}",
+                line,
+                column,
+                token
+            )),
+        }
+    }
+
+    pub fn parse(&mut self) -> Result<Vec<Ast>> {
+        let mut ast = Vec::new();
+
+        while let Some(e) = self.current_token() {
+            if e.kind == TokenKind::EOF {
+                break;
+            }
+            let expr = self.parse_expression()?;
+            ast.push(expr);
+        }
+
+        Ok(ast)
     }
 }

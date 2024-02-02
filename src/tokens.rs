@@ -1,4 +1,6 @@
-use crate::ast::BinaryOp;
+use std::fmt::Display;
+
+pub const DELIMITERS: &str = "(){}[],:;";
 
 #[derive(Debug, PartialEq)]
 pub struct Token {
@@ -7,51 +9,71 @@ pub struct Token {
     pub column: usize,
 }
 
-impl Token {
-    pub fn kind_string(&self) -> String {
-        match &self.kind {
-            TokenKind::Number(s) => format!("Number({})", s),
-            TokenKind::Input => "Input".to_string(),
-            TokenKind::Plus => "+".to_string(),
-            TokenKind::Minus => "-".to_string(),
-            TokenKind::Star => "*".to_string(),
-            TokenKind::Slash => "/".to_string(),
-            TokenKind::LParen => "(".to_string(),
-            TokenKind::RParen => ")".to_string(),
-            TokenKind::EOF => "EOF".to_string(),
-        }
-    }    
+impl Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Token({}, {}:{})", self.kind, self.line, self.column)
+    }
 }
 
 #[derive(Debug, PartialEq)]
 pub enum TokenKind {
-    Number(String),
-    Input,
-    Plus,
-    Minus,
-    Star,
-    Slash,
-    LParen,
-    RParen,
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    Char(char),     // 'a'
+    String(String), // "hello, world"
+    Identifier(Identifier),
+    Delimiter(char),
     EOF,
 }
 
+impl Display for TokenKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TokenKind::Int(n) => write!(f, "Int({})", n),
+            TokenKind::Float(n) => write!(f, "Float({})", n),
+            TokenKind::Bool(b) => write!(f, "Bool({})", b),
+            TokenKind::Char(c) => write!(f, "Char({})", c),
+            TokenKind::String(s) => write!(f, "String({})", s),
+            TokenKind::Identifier(id) => write!(f, "Identifier({:?})", id),
+            TokenKind::Delimiter(c) => write!(f, "Delimiter({})", c),
+            TokenKind::EOF => write!(f, "EOF"),
+        }
+    }
+}
+
 impl TokenKind {
-    pub fn number(&self) -> Option<f64> {
+    pub fn is_literal(&self) -> bool {
         match self {
-            TokenKind::Number(s) => s.parse().ok(),
-            _ => None,
+            TokenKind::Int(_)
+            | TokenKind::Float(_)
+            | TokenKind::Bool(_)
+            | TokenKind::Char(_)
+            | TokenKind::String(_)
+            | TokenKind::Identifier(_) => true,
+            _ => false,
         }
     }
+}
 
+#[derive(Debug, PartialEq, Clone, Hash)]
+pub struct Identifier {
+    pub name: String,
+    pub kind: IdentifierKind,
+}
 
-    pub fn binary_op(&self) -> Option<BinaryOp> {
-        match self {
-            TokenKind::Plus => Some(BinaryOp::Add),
-            TokenKind::Minus => Some(BinaryOp::Sub),
-            TokenKind::Star => Some(BinaryOp::Mul),
-            TokenKind::Slash => Some(BinaryOp::Div),
-            _ => None,
+impl Identifier {
+    pub fn new_variable(name: &str) -> Self {
+        Identifier {
+            name: name.to_string(),
+            kind: IdentifierKind::Variable,
         }
     }
+}
+
+#[derive(Debug, PartialEq, Clone, Hash)]
+pub enum IdentifierKind {
+    Variable, // i
+    Macro,    // @macro
+    Type,     // $type
 }
