@@ -55,6 +55,17 @@ impl Parser {
             .kind
         {
             TokenKind::Number(_) => self.parse_number(),
+            TokenKind::Input => {
+                let token = self.current_token().unwrap();
+                let line = token.line;
+                let column = token.column;
+                self.advance();
+                Ok(Ast {
+                    kind: AstKind::Input,
+                    line,
+                    column,
+                })
+            }
             TokenKind::LParen => {
                 self.advance();
                 let expr = self.parse_expr(0)?;
@@ -79,6 +90,23 @@ impl Parser {
                 match expr.kind {
                     AstKind::Number(n) => Ok(Ast {
                         kind: AstKind::Number(-n),
+                        line: expr.line,
+                        column: expr.column,
+                    }),
+                    AstKind::Input => Ok(Ast {
+                        kind: AstKind::BinaryOp {
+                            op: BinaryOp::Mul,
+                            lhs: Box::new(Ast {
+                                kind: AstKind::Number(-1.0),
+                                line: expr.line,
+                                column: expr.column,
+                            }),
+                            rhs: Box::new(Ast {
+                                kind: AstKind::Input,
+                                line: expr.line,
+                                column: expr.column,
+                            }),
+                        },
                         line: expr.line,
                         column: expr.column,
                     }),

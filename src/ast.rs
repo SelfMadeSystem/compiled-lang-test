@@ -9,6 +9,7 @@ impl Ast {
     pub fn to_str_expr(&self) -> String {
         match &self.kind {
             AstKind::Number(n) => n.to_string(),
+            AstKind::Input => "i".to_string(),
             AstKind::BinaryOp { op, lhs, rhs } => {
                 format!(
                     "({} {} {})",
@@ -29,6 +30,7 @@ impl Ast {
 #[derive(Debug, PartialEq)]
 pub enum AstKind {
     Number(f64),
+    Input,
     BinaryOp {
         op: BinaryOp,
         lhs: Box<Ast>,

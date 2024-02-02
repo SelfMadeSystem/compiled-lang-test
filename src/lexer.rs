@@ -60,6 +60,11 @@ impl Lexer {
     pub fn next_token(&mut self) -> Result<Token> {
         self.skip_whitespace();
         let token = match self.current_char() {
+            Some('i') => Token {
+                kind: TokenKind::Input,
+                line: self.line,
+                column: self.column,
+            },
             Some('+') => Token {
                 kind: TokenKind::Plus,
                 line: self.line,

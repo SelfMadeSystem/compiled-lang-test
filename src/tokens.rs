@@ -11,6 +11,7 @@ impl Token {
     pub fn kind_string(&self) -> String {
         match &self.kind {
             TokenKind::Number(s) => format!("Number({})", s),
+            TokenKind::Input => "Input".to_string(),
             TokenKind::Plus => "+".to_string(),
             TokenKind::Minus => "-".to_string(),
             TokenKind::Star => "*".to_string(),
@@ -25,6 +26,7 @@ impl Token {
 #[derive(Debug, PartialEq)]
 pub enum TokenKind {
     Number(String),
+    Input,
     Plus,
     Minus,
     Star,
