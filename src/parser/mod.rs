@@ -1,6 +1,7 @@
-use super::ast::{Ast, AstKind};
 use super::tokens::{Token, TokenKind};
 use anyhow::{anyhow, Result};
+use ast::{ParsedAst, ParsedAstKind};
+pub mod ast;
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -23,7 +24,7 @@ impl Parser {
         self.position += 1;
     }
 
-    fn parse_literal(&mut self) -> Result<Ast> {
+    fn parse_literal(&mut self) -> Result<ParsedAst> {
         let token = self
             .current_token()
             .ok_or_else(|| anyhow!("Unexpected EOF"))?;
@@ -34,8 +35,8 @@ impl Parser {
             TokenKind::Int(n) => {
                 let n = *n;
                 self.advance();
-                Ok(Ast {
-                    kind: AstKind::Int(n),
+                Ok(ParsedAst {
+                    kind: ParsedAstKind::Int(n),
                     line,
                     column,
                 })
@@ -43,8 +44,8 @@ impl Parser {
             TokenKind::Float(n) => {
                 let n = *n;
                 self.advance();
-                Ok(Ast {
-                    kind: AstKind::Float(n),
+                Ok(ParsedAst {
+                    kind: ParsedAstKind::Float(n),
                     line,
                     column,
                 })
@@ -52,8 +53,8 @@ impl Parser {
             TokenKind::Bool(b) => {
                 let b = *b;
                 self.advance();
-                Ok(Ast {
-                    kind: AstKind::Bool(b),
+                Ok(ParsedAst {
+                    kind: ParsedAstKind::Bool(b),
                     line,
                     column,
                 })
@@ -61,8 +62,8 @@ impl Parser {
             TokenKind::Char(c) => {
                 let c = *c;
                 self.advance();
-                Ok(Ast {
-                    kind: AstKind::Char(c),
+                Ok(ParsedAst {
+                    kind: ParsedAstKind::Char(c),
                     line,
                     column,
                 })
@@ -70,8 +71,8 @@ impl Parser {
             TokenKind::String(s) => {
                 let s = s.clone();
                 self.advance();
-                Ok(Ast {
-                    kind: AstKind::String(s),
+                Ok(ParsedAst {
+                    kind: ParsedAstKind::String(s),
                     line,
                     column,
                 })
@@ -79,8 +80,8 @@ impl Parser {
             TokenKind::Identifier(id) => {
                 let id = id.clone();
                 self.advance();
-                Ok(Ast {
-                    kind: AstKind::Identifier(id),
+                Ok(ParsedAst {
+                    kind: ParsedAstKind::Identifier(id),
                     line,
                     column,
                 })
@@ -94,7 +95,7 @@ impl Parser {
         }
     }
 
-    fn parse_array(&mut self) -> Result<Ast> {
+    fn parse_array(&mut self) -> Result<ParsedAst> {
         let token = self
             .current_token()
             .ok_or_else(|| anyhow!("Unexpected EOF"))?;
@@ -147,14 +148,14 @@ impl Parser {
             self.advance();
         }
 
-        Ok(Ast {
-            kind: AstKind::Array(elements),
+        Ok(ParsedAst {
+            kind: ParsedAstKind::Array(elements),
             line,
             column,
         })
     }
 
-    fn parse_call(&mut self) -> Result<Ast> {
+    fn parse_call(&mut self) -> Result<ParsedAst> {
         let token = self
             .current_token()
             .ok_or_else(|| anyhow!("Unexpected EOF"))?;
@@ -213,14 +214,14 @@ impl Parser {
             }
         }
 
-        Ok(Ast {
-            kind: AstKind::Call { name, args },
+        Ok(ParsedAst {
+            kind: ParsedAstKind::Call { name, args },
             line,
             column,
         })
     }
 
-    fn parse_expression(&mut self) -> Result<Ast> {
+    fn parse_expression(&mut self) -> Result<ParsedAst> {
         let token = self
             .current_token()
             .ok_or_else(|| anyhow!("Unexpected EOF"))?;
@@ -240,7 +241,7 @@ impl Parser {
         }
     }
 
-    pub fn parse(&mut self) -> Result<Vec<Ast>> {
+    pub fn parse(&mut self) -> Result<Vec<ParsedAst>> {
         let mut ast = Vec::new();
 
         while let Some(e) = self.current_token() {

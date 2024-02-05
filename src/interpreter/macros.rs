@@ -1,15 +1,18 @@
 use anyhow::Result;
 
+use crate::parser::ast::ParsedAst;
+
 use super::{
+    ast::ItpAst,
     scope::Scope,
-    statement::Statement,
-    value::{ItpFunctionParameters, ItpFunctionValue, ItpTypeValue, ItpValue},
+    value::{
+        ItpFunctionParameters, ItpFunctionValue, ItpTypeValue, ItpValue, UnItpedFunctionValue,
+    },
     Interpreter,
 };
-use crate::ast::Ast;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-pub type Macro = fn(&[Ast], &mut Interpreter) -> Result<Vec<Statement>>;
+pub type Macro = fn(&[ParsedAst], &mut Interpreter) -> Result<Vec<ItpAst>>;
 
 macro_rules! add_macro {
     ($macros:ident, $name:expr, $func:expr) => {
@@ -26,22 +29,12 @@ pub fn macros() -> HashMap<String, Macro> {
 }
 
 /// (@fn name [arg1, arg2] (call arg1) (call arg2))
-fn fn_macro(ast: &[Ast], itpr: &mut Interpreter) -> Result<Vec<Statement>> {
+fn fn_macro(ast: &[ParsedAst], itpr: &mut Interpreter) -> Result<Vec<ItpAst>> {
     let name = ast[0].as_identifier()?;
     let args = ast[1].as_array()?;
     let body = &ast[2..];
 
-    let mut statements = vec![];
-
-    let new_scope = Scope::new_child(itpr.scope.clone());
-    let new_scope = Rc::new(RefCell::new(new_scope));
-
-    for ast in body {
-        let statement = itpr.ast_to_statements(ast, &new_scope)?;
-        statements.extend(statement);
-    }
-
-    let mut args = args
+    let args = args
         .iter()
         .map(|arg| {
             arg.as_identifier()
@@ -49,13 +42,13 @@ fn fn_macro(ast: &[Ast], itpr: &mut Interpreter) -> Result<Vec<Statement>> {
         })
         .collect::<Result<Vec<(String, ItpTypeValue)>>>()?;
 
-    let function = ItpValue::Function(ItpFunctionValue {
+    let function = ItpValue::UnItpedFunction(UnItpedFunctionValue {
         name: name.name.clone(),
         parameters: ItpFunctionParameters {
             parameters: args,
             variadic: false,
         },
-        body: statements,
+        body: body.to_vec(),
         return_type: ItpTypeValue::Float,
     });
 

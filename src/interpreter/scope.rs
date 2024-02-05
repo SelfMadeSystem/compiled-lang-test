@@ -46,18 +46,16 @@ impl Scope {
         Ok(())
     }
 
-    pub fn new_temp_name(&mut self) -> String {
-        let mut new_name = "temp".to_string();
-        let mut i = 0;
-
-        while self.bindings.contains_key(&new_name) {
-            i += 1;
-            new_name = format!("temp_{}", i);
+    pub fn replace(&mut self, name: String, value: Rc<ItpValue>) -> Result<()> {
+        if self.bindings.contains_key(&name) {
+            self.bindings.insert(name, value);
+            return Ok(());
         }
 
-        self.bindings
-            .insert(new_name.clone(), Rc::new(ItpValue::Temp));
+        if let Some(parent) = &self.parent {
+            return parent.borrow_mut().replace(name, value);
+        }
 
-        new_name
+        Err(anyhow!("Variable not defined"))
     }
 }

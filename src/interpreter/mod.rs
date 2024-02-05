@@ -3,20 +3,20 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use anyhow::Result;
 
 use crate::{
-    ast::{Ast, AstKind},
-    tokens::{Identifier, IdentifierKind},
+    parser::ast::{ParsedAst, ParsedAstKind},
+    tokens::IdentifierKind,
 };
 
 use self::{
+    ast::{ItpAst, ItpAstKind},
     macros::Macro,
     scope::Scope,
-    statement::{Statement, StatementKind},
-    value::{ItpConstantValue, ItpValue},
+    value::{IFPCheck, ItpConstantValue, ItpFunctionValue, ItpValue, UnItpedFunctionValue},
 };
 
+pub mod ast;
 pub mod macros;
 pub mod scope;
-pub mod statement;
 pub mod value;
 
 #[derive(Debug)]
@@ -33,135 +33,184 @@ impl Interpreter {
         }
     }
 
-    fn ast_to_statements(
+    fn interpret_ast(
         &mut self,
-        ast: &Ast,
+        ast: &ParsedAst,
         scope: &Rc<RefCell<Scope>>,
-    ) -> Result<Vec<Statement>> {
+    ) -> Result<Vec<ItpAst>> {
+        let line = ast.line;
+        let column = ast.column;
         match &ast.kind {
-            AstKind::Call { name, args } => {
-                // If the call is a macro, execute the macro
-                match name.kind {
-                    IdentifierKind::Macro => {
-                        if let Some(macro_func) = self.macros.get(&name.name) {
-                            return macro_func(&args, self);
-                        } else {
-                            return ast.err(&format!("Macro {} not found", name.name));
-                        }
-                    }
-                    IdentifierKind::Type => return ast.err("Type not callable"),
-                    _ => {}
+            ParsedAstKind::Int(value) => Ok(vec![ItpAst {
+                kind: ItpAstKind::Constant(ItpConstantValue::Int(*value)),
+                line,
+                column,
+            }]),
+            ParsedAstKind::Float(value) => Ok(vec![ItpAst {
+                kind: ItpAstKind::Constant(ItpConstantValue::Float(*value)),
+                line,
+                column,
+            }]),
+            ParsedAstKind::String(value) => Ok(vec![ItpAst {
+                kind: ItpAstKind::Constant(ItpConstantValue::String(value.clone())),
+                line,
+                column,
+            }]),
+            ParsedAstKind::Char(value) => Ok(vec![ItpAst {
+                kind: ItpAstKind::Constant(ItpConstantValue::Char(*value)),
+                line,
+                column,
+            }]),
+            ParsedAstKind::Bool(value) => Ok(vec![ItpAst {
+                kind: ItpAstKind::Constant(ItpConstantValue::Bool(*value)),
+                line,
+                column,
+            }]),
+            ParsedAstKind::Array(values) => {
+                let mut result = vec![];
+                for value in values {
+                    result.extend(self.interpret_ast(value, scope)?);
                 }
-
-                // When one of the arguments is a call statement, we need to
-                // assign the result to a temporary variable and use that
-                // variable as an argument
-
-                let mut statements = vec![];
-                let mut arguments = vec![];
-
-                for arg in args {
-                    let statement = self.ast_to_statements(arg, scope)?;
-                    statements.extend(statement);
-
-                    let last = statements.pop().expect("No statement");
-
-                    match last.kind {
-                        StatementKind::Value { value } => {
-                            arguments.push(value);
-                        }
-                        StatementKind::CallAssign { ref assign, .. } => {
-                            arguments.push(ItpValue::Named(assign.clone()));
-                            statements.push(last);
-                        }
-                        _ => return ast.err("Invalid argument"),
-                    }
-                }
-
-                statements.push(Statement {
-                    kind: StatementKind::CallAssign {
-                        name: name.clone(),
-                        arguments,
-                        assign: Identifier::new_variable(&scope.borrow_mut().new_temp_name()),
-                    },
-                });
-
-                Ok(statements)
+                Ok(result)
             }
-            AstKind::Int(i) => Ok(vec![Statement {
-                kind: StatementKind::Value {
-                    value: ItpValue::Constant(ItpConstantValue::Int(*i)),
-                },
-            }]),
-            AstKind::Float(f) => Ok(vec![Statement {
-                kind: StatementKind::Value {
-                    value: ItpValue::Constant(ItpConstantValue::Float(*f)),
-                },
-            }]),
-            AstKind::Bool(b) => Ok(vec![Statement {
-                kind: StatementKind::Value {
-                    value: ItpValue::Constant(ItpConstantValue::Bool(*b)),
-                },
-            }]),
-            AstKind::Char(c) => Ok(vec![Statement {
-                kind: StatementKind::Value {
-                    value: ItpValue::Constant(ItpConstantValue::Char(*c)),
-                },
-            }]),
-            AstKind::String(s) => Ok(vec![Statement {
-                kind: StatementKind::Value {
-                    value: ItpValue::Constant(ItpConstantValue::String(s.clone())),
-                },
-            }]),
-            AstKind::Identifier(id) => {
-                match id.kind {
-                    IdentifierKind::Macro => {
-                        return ast.err("Macro is not a value");
-                    }
-                    IdentifierKind::Type => {
-                        return ast.err("Type is not a value");
-                    }
-                    _ => {}
-                }
-                Ok(vec![Statement {
-                    kind: StatementKind::Value {
-                        value: ItpValue::Named(id.clone()),
-                    },
-                }])
-            }
-            AstKind::Array(a) => {
-                let mut statements = vec![];
-                let mut values = vec![];
-
-                for ast in a {
-                    let statement = self.ast_to_statements(ast, scope)?;
-                    statements.extend(statement);
-
-                    let last = statements.pop().expect("No statement");
-
-                    match last.kind {
-                        StatementKind::Value { value } => {
-                            values.push(value);
-                        }
-                        StatementKind::CallAssign { assign, .. } => {
-                            values.push(ItpValue::Named(assign));
-                        }
-                        _ => return ast.err("Invalid argument"),
+            ParsedAstKind::Identifier(identifier) => match identifier.kind {
+                IdentifierKind::Variable => {
+                    let scope = scope.borrow();
+                    let value = scope.get(&identifier.name).ok_or_else(|| {
+                        ast.error(&format!("Variable {} not found", identifier.name))
+                    })?;
+                    if let ItpValue::Constant(c) = value.as_ref() {
+                        Ok(vec![ItpAst {
+                            kind: ItpAstKind::Constant(c.clone()),
+                            line,
+                            column,
+                        }])
+                    } else {
+                        Ok(vec![ItpAst {
+                            kind: ItpAstKind::Variable {
+                                name: identifier.clone(),
+                                result: value.get_type(),
+                            },
+                            line,
+                            column,
+                        }])
                     }
                 }
-                Ok(vec![Statement {
-                    kind: StatementKind::Value {
-                        value: ItpValue::Constant(ItpConstantValue::Array(values)),
-                    },
-                }])
-            }
+                IdentifierKind::Macro => ast.err("Macro not allowed here"),
+                IdentifierKind::Type => ast.err("Type not allowed here"),
+            },
+            ParsedAstKind::Call { name, args } => match name.kind {
+                IdentifierKind::Macro => {
+                    let macro_ = self
+                        .macros
+                        .get(&name.name)
+                        .ok_or_else(|| ast.error(&format!("Macro {} not found", name.name)))?;
+
+                    macro_(args, self)
+                }
+                IdentifierKind::Variable => {
+                    let func = scope
+                        .borrow()
+                        .get(&name.name)
+                        .ok_or_else(|| ast.error(&format!("Function {} not found", name.name)))?;
+
+                    match func.as_ref() {
+                        ItpValue::Function(ItpFunctionValue {
+                            parameters,
+                            return_type,
+                            ..
+                        }) | ItpValue::UnItpedFunction(UnItpedFunctionValue {
+                            parameters,
+                            return_type,
+                            ..
+                        }) => {
+                            let new_scope = Scope::new_child(scope.clone());
+                            let new_scope = Rc::new(RefCell::new(new_scope));
+                            let mut result = vec![];
+                            for arg in args {
+                                result.extend(self.interpret_ast(arg, &new_scope)?);
+                            }
+
+                            match parameters
+                                .check_params(&result.iter().map(|a| a.get_type()).collect())
+                            {
+                                IFPCheck::Ok => Ok(()),
+                                IFPCheck::NotEnoughParameters => ast.err("Not enough parameters"),
+                                IFPCheck::TooManyParameters => ast.err("Too many parameters"),
+                                IFPCheck::WrongType(i, got, expected) => ast.err(&format!(
+                                    "Wrong type for parameter {}: got {:?}, expected {:?}",
+                                    i, got, expected
+                                )),
+                            }?;
+
+                            Ok(vec![ItpAst {
+                                kind: ItpAstKind::Call {
+                                    function: name.clone(),
+                                    arguments: result,
+                                    result: return_type.clone(),
+                                },
+                                line,
+                                column,
+                            }])
+                        }
+                        _ => ast.err(&format!("{} is not a function", name.name)),
+                    }
+                }
+                IdentifierKind::Type => ast.err("Type not allowed here"),
+            },
         }
     }
 
-    pub fn interpret(&mut self, ast: &Vec<Ast>) -> Result<()> {
-        for ast in ast {
-            self.ast_to_statements(ast, &self.scope.clone())?;
+    fn interpret_uninterpreted_functions(&mut self) -> Result<()> {
+        let mut new_functions = HashMap::new();
+        for (name, value) in self.scope.clone().borrow().bindings.iter() {
+            if let ItpValue::UnItpedFunction(UnItpedFunctionValue {
+                name: fn_name,
+                parameters,
+                body,
+                return_type,
+            }) = value.as_ref()
+            {
+                let new_scope = Scope::new_child(self.scope.clone());
+                let new_scope = Rc::new(RefCell::new(new_scope));
+
+                for (name, ty) in parameters.parameters.iter() {
+                    new_scope
+                        .borrow_mut()
+                        .set(name.clone(), Rc::new(ItpValue::Temp(ty.clone())))?;
+                }
+
+                let mut interpreted_body = vec![];
+
+                for ast in body {
+                    interpreted_body.extend(self.interpret_ast(ast, &new_scope)?);
+                }
+
+                new_functions.insert(
+                    name.clone(),
+                    ItpValue::Function(ItpFunctionValue {
+                        name: fn_name.clone(),
+                        parameters: parameters.clone(),
+                        body: interpreted_body,
+                        return_type: return_type.clone(),
+                    }),
+                );
+            }
         }
+
+        for (name, value) in new_functions {
+            self.scope.borrow_mut().replace(name, Rc::new(value))?;
+        }
+
+        Ok(())
+    }
+
+    pub fn interpret(&mut self, ast: &Vec<ParsedAst>) -> Result<()> {
+        for ast in ast {
+            self.interpret_ast(ast, &self.scope.clone())?;
+        }
+
+        self.interpret_uninterpreted_functions()?;
 
         Ok(())
     }

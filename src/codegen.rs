@@ -2,12 +2,11 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::interpreter::{
     scope::Scope,
-    statement::{Statement, StatementKind},
     value::{ItpConstantValue, ItpFunctionValue, ItpTypeValue, ItpValue},
     Interpreter,
 };
 use anyhow::{anyhow, Result};
-use inkwell::module::Module;
+use inkwell::{module::Module, types::AnyType};
 use inkwell::values::FloatValue;
 use inkwell::{
     builder::{Builder, BuilderError},
@@ -211,12 +210,6 @@ impl<'t> CodeGen<'t> {
                     .const_array(&values)
                     .into()
             }
-            ItpConstantValue::None => self
-                .context
-                .i8_type()
-                .ptr_type(AddressSpace::default())
-                .const_null()
-                .into(),
         }
     }
 
