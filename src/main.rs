@@ -2,7 +2,7 @@ use interpreter::Interpreter;
 use lexer::Lexer;
 use parser::Parser;
 
-use crate::codegen::{compile_to_llvm_ir, run_jit};
+use crate::codegen::{compile_to_file, compile_to_llvm_ir, run_jit};
 
 mod codegen;
 mod interpreter;
@@ -21,7 +21,8 @@ fn main() {
 
 (@fn main[]
     (@set n 10)
-    (printf "fib(%f) = %f\n" n (fib n)))
+    (printf "fib(%f) = %f\n" n (fib n))
+    1)
 "#;
 
     let tokens = Lexer::new(input.to_string()).lex().unwrap();
@@ -37,6 +38,8 @@ fn main() {
     println!("=== LLVM IR ===");
     let ir = compile_to_llvm_ir(&interpreter).unwrap();
     println!("{}", ir);
+    println!("=== Writing to file ===");
+    compile_to_file(&interpreter, "hello").unwrap();
     println!("=== Running JIT ===");
     run_jit(&interpreter).unwrap();
 }

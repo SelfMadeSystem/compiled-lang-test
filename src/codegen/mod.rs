@@ -487,3 +487,20 @@ pub fn run_jit(itp: &Interpreter) -> Result<()> {
 
     Ok(())
 }
+
+pub fn compile_to_file(itp: &Interpreter, filename: &str) -> Result<()> {
+    let context = Context::create();
+    let codegen = (&CodeGen::new(&context)) as *const CodeGen<'_>;
+
+    unsafe {
+        (*codegen).compile(itp)?;
+        if (*codegen)
+            .module
+            .write_bitcode_to_path(std::path::Path::new(filename))
+        {
+            Ok(())
+        } else {
+            Err(anyhow!("Unable to write bitcode to file"))
+        }
+    }
+}
