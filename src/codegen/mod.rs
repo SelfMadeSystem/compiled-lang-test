@@ -6,7 +6,7 @@ use crate::interpreter::{
     Interpreter,
 };
 use anyhow::{anyhow, Result};
-use inkwell::values::FunctionValue;
+use inkwell::{types::BasicTypeEnum, values::{FunctionValue, PointerValue}};
 use inkwell::{builder::Builder, types::FunctionType};
 use inkwell::{
     context::Context,
@@ -62,11 +62,37 @@ fn try_as_basic_metadata_type_enum<'a>(ty: AnyTypeEnum<'a>) -> Result<BasicMetad
     }
 }
 
+fn try_as_basic_type_enum<'a>(ty: AnyTypeEnum<'a>) -> Result<BasicTypeEnum<'a>> {
+    match ty {
+        AnyTypeEnum::ArrayType(t) => Ok(t.as_basic_type_enum()),
+        AnyTypeEnum::FloatType(t) => Ok(t.as_basic_type_enum()),
+        AnyTypeEnum::IntType(t) => Ok(t.as_basic_type_enum()),
+        AnyTypeEnum::PointerType(t) => Ok(t.as_basic_type_enum()),
+        AnyTypeEnum::StructType(t) => Ok(t.as_basic_type_enum()),
+        AnyTypeEnum::VectorType(t) => Ok(t.as_basic_type_enum()),
+        AnyTypeEnum::VoidType(t) => Err(anyhow!("Void type is not a basic type")),
+        AnyTypeEnum::FunctionType(_) => Err(anyhow!("Function type is not a basic type")),
+    }
+}
+
+fn try_as_basic_value_enum<'a>(value: AnyValueEnum<'a>) -> Result<BasicValueEnum<'a>> {
+    match value {
+        AnyValueEnum::ArrayValue(a) => Ok(a.as_basic_value_enum()),
+        AnyValueEnum::IntValue(i) => Ok(i.as_basic_value_enum()),
+        AnyValueEnum::FloatValue(f) => Ok(f.as_basic_value_enum()),
+        AnyValueEnum::PointerValue(p) => Ok(p.as_basic_value_enum()),
+        AnyValueEnum::StructValue(s) => Ok(s.as_basic_value_enum()),
+        AnyValueEnum::VectorValue(v) => Ok(v.as_basic_value_enum()),
+        AnyValueEnum::MetadataValue(_) => Err(anyhow!("Metadata value is not a basic value")),
+        _ => Err(anyhow!("Value is not a basic value")),
+    }
+}
+
 pub struct CodeGen<'t> {
     context: &'t Context,
     module: Module<'t>,
     builder: Builder<'t>,
-    variables: RefCell<HashMap<String, AnyValueEnum<'t>>>,
+    variables: RefCell<HashMap<String, PointerValue<'t>>>,
 }
 
 impl<'t> CodeGen<'t> {
@@ -267,11 +293,24 @@ impl<'t> CodeGen<'t> {
                 let value = vars.get(&name.name).ok_or_else(|| {
                     anyhow!("Variable {} not found in function {}", name.name, func.get_name().to_str().unwrap())
                 })?;
-                Ok(value.clone())
+                let value = self.builder.build_load(*value, "load")
+                    .map_err(|err| anyhow!(err))?;
+                Ok(value.as_any_value_enum())
             },
             ItpAstKind::SetVariable { name, value } => {
                 let value = self.ast(value, func)?;
-                self.variables.borrow_mut().insert(name.name.clone(), value.clone());
+                if self.variables.borrow().contains_key(&name.name) {
+                    let b = self.variables.borrow();
+                    let var = b.get(&name.name).unwrap();
+                    self.builder.build_store(*var, try_as_basic_value_enum(value)?)
+                        .map_err(|err| anyhow!(err))?;
+                } else {
+                    let alloca = self.builder.build_alloca(try_as_basic_type_enum(value.get_type())?, &name.name)
+                        .map_err(|err| anyhow!(err))?;
+                    self.builder.build_store(alloca, try_as_basic_value_enum(value)?)
+                        .map_err(|err| anyhow!(err))?;
+                    self.variables.borrow_mut().insert(name.name.clone(), alloca);
+                }
                 Ok(value)
             }
             ItpAstKind::Param { position, .. } => {

@@ -62,15 +62,6 @@ pub struct Identifier {
     pub kind: IdentifierKind,
 }
 
-impl Identifier {
-    pub fn new_variable(name: &str) -> Self {
-        Identifier {
-            name: name.to_string(),
-            kind: IdentifierKind::Variable,
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Clone, Hash)]
 pub enum IdentifierKind {
     Variable, // i
