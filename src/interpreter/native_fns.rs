@@ -82,6 +82,20 @@ pub fn add_native_fns(itp: &mut Interpreter) {
 
     add_native_fn!(
         scope,
+        "==",
+        ItpFunctionParameters {
+            parameters: vec![
+                ("a".to_string(), ItpTypeValue::Float),
+                ("b".to_string(), ItpTypeValue::Float)
+            ],
+            variadic: false,
+        },
+        ItpTypeValue::Bool,
+        true,
+    );
+
+    add_native_fn!(
+        scope,
         "printf",
         ItpFunctionParameters {
             parameters: vec![("format".to_string(), ItpTypeValue::String)],

@@ -6,7 +6,6 @@ use crate::interpreter::{
     Interpreter,
 };
 use anyhow::{anyhow, Result};
-use inkwell::{types::BasicTypeEnum, values::{FunctionValue, PointerValue}};
 use inkwell::{builder::Builder, types::FunctionType};
 use inkwell::{
     context::Context,
@@ -21,6 +20,10 @@ use inkwell::{
     module::Module,
     types::{AnyType, AnyTypeEnum},
     values::AnyValue,
+};
+use inkwell::{
+    types::BasicTypeEnum,
+    values::{FunctionValue, PointerValue},
 };
 use inkwell::{AddressSpace, OptimizationLevel};
 
@@ -70,7 +73,7 @@ fn try_as_basic_type_enum<'a>(ty: AnyTypeEnum<'a>) -> Result<BasicTypeEnum<'a>> 
         AnyTypeEnum::PointerType(t) => Ok(t.as_basic_type_enum()),
         AnyTypeEnum::StructType(t) => Ok(t.as_basic_type_enum()),
         AnyTypeEnum::VectorType(t) => Ok(t.as_basic_type_enum()),
-        AnyTypeEnum::VoidType(t) => Err(anyhow!("Void type is not a basic type")),
+        AnyTypeEnum::VoidType(_) => Err(anyhow!("Void type is not a basic type")),
         AnyTypeEnum::FunctionType(_) => Err(anyhow!("Function type is not a basic type")),
     }
 }
@@ -291,25 +294,37 @@ impl<'t> CodeGen<'t> {
             ItpAstKind::Variable { name, .. } => {
                 let vars = self.variables.borrow();
                 let value = vars.get(&name.name).ok_or_else(|| {
-                    anyhow!("Variable {} not found in function {}", name.name, func.get_name().to_str().unwrap())
+                    anyhow!(
+                        "Variable {} not found in function {}",
+                        name.name,
+                        func.get_name().to_str().unwrap()
+                    )
                 })?;
-                let value = self.builder.build_load(*value, "load")
+                let value = self
+                    .builder
+                    .build_load(*value, "load")
                     .map_err(|err| anyhow!(err))?;
                 Ok(value.as_any_value_enum())
-            },
+            }
             ItpAstKind::SetVariable { name, value } => {
                 let value = self.ast(value, func)?;
                 if self.variables.borrow().contains_key(&name.name) {
                     let b = self.variables.borrow();
                     let var = b.get(&name.name).unwrap();
-                    self.builder.build_store(*var, try_as_basic_value_enum(value)?)
+                    self.builder
+                        .build_store(*var, try_as_basic_value_enum(value)?)
                         .map_err(|err| anyhow!(err))?;
                 } else {
-                    let alloca = self.builder.build_alloca(try_as_basic_type_enum(value.get_type())?, &name.name)
+                    let alloca = self
+                        .builder
+                        .build_alloca(try_as_basic_type_enum(value.get_type())?, &name.name)
                         .map_err(|err| anyhow!(err))?;
-                    self.builder.build_store(alloca, try_as_basic_value_enum(value)?)
+                    self.builder
+                        .build_store(alloca, try_as_basic_value_enum(value)?)
                         .map_err(|err| anyhow!(err))?;
-                    self.variables.borrow_mut().insert(name.name.clone(), alloca);
+                    self.variables
+                        .borrow_mut()
+                        .insert(name.name.clone(), alloca);
                 }
                 Ok(value)
             }
@@ -322,6 +337,92 @@ impl<'t> CodeGen<'t> {
                     )
                 })?;
                 Ok(arg.as_any_value_enum())
+            }
+            ItpAstKind::Conditional {
+                condition,
+                then,
+                else_,
+            } => {
+                let condition = self.ast(condition, func)?;
+                let AnyValueEnum::IntValue(condition) = condition
+                else {
+                    return Err(anyhow!("Condition is not an integer"));
+                };
+
+                if condition.get_type() != self.context.bool_type() {
+                    return Err(anyhow!("Condition is not a boolean"));
+                }
+
+                let function = self
+                    .builder
+                    .get_insert_block()
+                    .unwrap()
+                    .get_parent()
+                    .unwrap();
+                let then_block = self.context.append_basic_block(function, "then");
+                let else_block = self.context.append_basic_block(function, "else");
+                let merge_block = self.context.append_basic_block(function, "ifcont");
+
+                self.builder
+                    .build_conditional_branch(condition, then_block, else_block)
+                    .map_err(|err| anyhow!(err))?;
+
+                self.builder.position_at_end(then_block);
+                let then_value = self.ast(then, func)?;
+                self.builder
+                    .build_unconditional_branch(merge_block)
+                    .map_err(|err| anyhow!(err))?;
+
+                let then_block = self.builder.get_insert_block().unwrap();
+
+                self.builder.position_at_end(else_block);
+                let else_value = self.ast(else_, func)?;
+                self.builder
+                    .build_unconditional_branch(merge_block)
+                    .map_err(|err| anyhow!(err))?;
+
+                let else_block = self.builder.get_insert_block().unwrap();
+
+                self.builder.position_at_end(merge_block);
+                match (then_value, else_value) {
+                    (AnyValueEnum::ArrayValue(a), AnyValueEnum::ArrayValue(b)) => {
+                        let phi = self.builder.build_phi(a.get_type(), "iftmp")
+                            .map_err(|err| anyhow!(err))?;
+                        phi.add_incoming(&[(&a, then_block), (&b, else_block)]);
+                        Ok(phi.as_any_value_enum())
+                    }
+                    (AnyValueEnum::IntValue(a), AnyValueEnum::IntValue(b)) => {
+                        let phi = self.builder.build_phi(a.get_type(), "iftmp")
+                            .map_err(|err| anyhow!(err))?;
+                        phi.add_incoming(&[(&a, then_block), (&b, else_block)]);
+                        Ok(phi.as_any_value_enum())
+                    }
+                    (AnyValueEnum::FloatValue(a), AnyValueEnum::FloatValue(b)) => {
+                        let phi = self.builder.build_phi(a.get_type(), "iftmp")
+                            .map_err(|err| anyhow!(err))?;
+                        phi.add_incoming(&[(&a, then_block), (&b, else_block)]);
+                        Ok(phi.as_any_value_enum())
+                    }
+                    (AnyValueEnum::PointerValue(a), AnyValueEnum::PointerValue(b)) => {
+                        let phi = self.builder.build_phi(a.get_type(), "iftmp")
+                            .map_err(|err| anyhow!(err))?;
+                        phi.add_incoming(&[(&a, then_block), (&b, else_block)]);
+                        Ok(phi.as_any_value_enum())
+                    }
+                    (AnyValueEnum::StructValue(a), AnyValueEnum::StructValue(b)) => {
+                        let phi = self.builder.build_phi(a.get_type(), "iftmp")
+                            .map_err(|err| anyhow!(err))?;
+                        phi.add_incoming(&[(&a, then_block), (&b, else_block)]);
+                        Ok(phi.as_any_value_enum())
+                    }
+                    (AnyValueEnum::VectorValue(a), AnyValueEnum::VectorValue(b)) => {
+                        let phi = self.builder.build_phi(a.get_type(), "iftmp")
+                            .map_err(|err| anyhow!(err))?;
+                        phi.add_incoming(&[(&a, then_block), (&b, else_block)]);
+                        Ok(phi.as_any_value_enum())
+                    }
+                    _ => Err(anyhow!("Incompatible types in conditional")),
+                }
             }
             ItpAstKind::Call {
                 function,

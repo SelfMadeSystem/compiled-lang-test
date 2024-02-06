@@ -12,16 +12,16 @@ mod tokens;
 
 fn main() {
     let input = r#"
-(@fn add[a, b, c]
-    (@set d (+ a b))
-    (@set e (+ d c))
-    e)
+(@fn fib[a]
+    (@if (== a 0)
+        0
+        (@if (== a 1)
+            1
+            (+ (fib (- a 1)) (fib (- a 2))))))
 
 (@fn main[]
-    (@set c 6.0)
-    (@set c (add c 4.0 0.0))
-    (@set c (add c 5.0 0.0))
-    (printf "(1 + 2 + 3) * %f = %f\n\0" c (* (add 1.0 2.0 3.0) c)))
+    (@set n 10)
+    (printf "fib(%f) = %f\n" n (fib n)))
 "#;
 
     let tokens = Lexer::new(input.to_string()).lex().unwrap();

@@ -95,25 +95,26 @@ impl Lexer {
                 break;
             }
         }
-        if float {
-            match number.parse::<f64>() {
-                Ok(f) => Ok(Token {
-                    kind: TokenKind::Float(f),
-                    line: self.saved_line,
-                    column: self.saved_column,
-                }),
-                Err(_) => self.err("Invalid float"),
-            }
-        } else {
-            match number.parse::<i64>() {
-                Ok(i) => Ok(Token {
-                    kind: TokenKind::Int(i),
-                    line: self.saved_line,
-                    column: self.saved_column,
-                }),
-                Err(_) => self.err("Invalid integer"),
-            }
+        // TODO: Allow for more than just floats
+        // if float {
+        match number.parse::<f64>() {
+            Ok(f) => Ok(Token {
+                kind: TokenKind::Float(f),
+                line: self.saved_line,
+                column: self.saved_column,
+            }),
+            Err(_) => self.err("Invalid float"),
         }
+        // } else {
+        //     match number.parse::<i64>() {
+        //         Ok(i) => Ok(Token {
+        //             kind: TokenKind::Int(i),
+        //             line: self.saved_line,
+        //             column: self.saved_column,
+        //         }),
+        //         Err(_) => self.err("Invalid integer"),
+        //     }
+        // }
     }
 
     /// Reads just a single char that's part of a string or character literal.

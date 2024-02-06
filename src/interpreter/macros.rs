@@ -23,6 +23,7 @@ pub fn macros() -> HashMap<String, Macro> {
 
     add_macro!(macros, "fn", fn_macro);
     add_macro!(macros, "set", set_macro);
+    add_macro!(macros, "if", if_macro);
 
     macros
 }
@@ -94,6 +95,49 @@ fn set_macro(
         kind: ItpAstKind::SetVariable {
             name,
             value: Box::new(value[0].clone()),
+        },
+        line,
+        column,
+    }])
+}
+
+/// (@if condition then else)
+fn if_macro(
+    ast: &[ParsedAst],
+    scope: Rc<RefCell<Scope>>,
+    itpr: &mut Interpreter,
+) -> Result<Vec<ItpAst>> {
+    if ast.len() != 3 {
+        return Err(anyhow!("Expected 3 arguments"));
+    }
+
+    let condition = ast.get(0).ok_or_else(|| anyhow!("Expected condition"))?;
+    let line = condition.line;
+    let column = condition.column;
+    let then = ast.get(1).ok_or_else(|| anyhow!("Expected then"))?;
+    let else_ = ast.get(2).ok_or_else(|| anyhow!("Expected else"))?;
+
+    let condition = itpr.interpret_ast(&condition, &scope)?;
+    let then = itpr.interpret_ast(&then, &scope)?;
+    let else_ = itpr.interpret_ast(&else_, &scope)?;
+
+    if condition.len() != 1 {
+        return Err(anyhow!("Expected single condition"));
+    }
+
+    if then.len() != 1 {
+        return Err(anyhow!("Expected single then"));
+    }
+
+    if else_.len() != 1 {
+        return Err(anyhow!("Expected single else"));
+    }
+
+    Ok(vec![ItpAst {
+        kind: ItpAstKind::Conditional {
+            condition: Box::new(condition[0].clone()),
+            then: Box::new(then[0].clone()),
+            else_: Box::new(else_[0].clone()),
         },
         line,
         column,

@@ -85,7 +85,6 @@ impl Interpreter {
                 IdentifierKind::Variable => {
                     let scope = scope.borrow();
                     let value = scope.get(&identifier.name).ok_or_else(|| {
-                        println!("{:#?}", scope.bindings);
                         ast.error(&format!("Variable {} not found", identifier.name))
                     })?;
                     match value.as_ref() {
@@ -208,8 +207,6 @@ impl Interpreter {
                         .borrow_mut()
                         .set(name.clone(), Rc::new(ItpValue::Param(i as u32, ty.clone())))?;
                 }
-
-                println!("{:#?}", new_scope.borrow().bindings);
 
                 let mut interpreted_body = vec![];
 

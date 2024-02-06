@@ -30,7 +30,14 @@ impl ItpAst {
         match &self.kind {
             ItpAstKind::Constant(value) => value.get_type(),
             ItpAstKind::Variable { result, .. } => result.clone(),
-            ItpAstKind::SetVariable { .. } => ItpTypeValue::Void, // assignment has no type
+            ItpAstKind::SetVariable { .. } => ItpTypeValue::Void,
+            ItpAstKind::Conditional { then, else_, .. } => {
+                if then.get_type() != else_.get_type() {
+                    ItpTypeValue::Void
+                } else {
+                    then.get_type()
+                }
+            }
             ItpAstKind::Param { result, .. } => result.clone(),
             ItpAstKind::Call { result, .. } => result.clone(),
         }
@@ -53,6 +60,11 @@ pub enum ItpAstKind {
         position: u32,
         name: Identifier,
         result: ItpTypeValue,
+    },
+    Conditional {
+        condition: Box<ItpAst>,
+        then: Box<ItpAst>,
+        else_: Box<ItpAst>,
     },
     Call {
         function: Identifier,
