@@ -8,14 +8,21 @@ use crate::{
 };
 
 use self::{
-    ast::{ItpAst, ItpAstKind}, macros::Macro, native_fns::add_native_fns, scope::Scope, value::{IFPCheck, ItpConstantValue, ItpFunctionValue, ItpValue, NativeFunctionValue, UnItpedFunctionValue}
+    ast::{ItpAst, ItpAstKind},
+    macros::Macro,
+    native_fns::add_native_fns,
+    scope::Scope,
+    value::{
+        IFPCheck, ItpConstantValue, ItpFunctionValue, ItpValue, NativeFunctionValue,
+        UnItpedFunctionValue,
+    },
 };
 
 pub mod ast;
 pub mod macros;
+pub mod native_fns;
 pub mod scope;
 pub mod value;
-pub mod native_fns;
 
 #[derive(Debug)]
 pub struct Interpreter {
@@ -79,21 +86,33 @@ impl Interpreter {
                     let value = scope.get(&identifier.name).ok_or_else(|| {
                         ast.error(&format!("Variable {} not found", identifier.name))
                     })?;
-                    if let ItpValue::Constant(c) = value.as_ref() {
-                        Ok(vec![ItpAst {
-                            kind: ItpAstKind::Constant(c.clone()),
-                            line,
-                            column,
-                        }])
-                    } else {
-                        Ok(vec![ItpAst {
-                            kind: ItpAstKind::Variable {
+                    match value.as_ref() {
+                        ItpValue::Constant(c) => {
+                            Ok(vec![ItpAst {
+                                kind: ItpAstKind::Constant(c.clone()),
+                                line,
+                                column,
+                            }])
+                        }
+                        ItpValue::Param(i, t) => Ok(vec![ItpAst {
+                            kind: ItpAstKind::Param {
+                                position: *i,
                                 name: identifier.clone(),
-                                result: value.get_type(),
+                                result: t.clone(),
                             },
                             line,
                             column,
-                        }])
+                        }]),
+                        _ => {
+                                            Ok(vec![ItpAst {
+                                                kind: ItpAstKind::Variable {
+                                                    name: identifier.clone(),
+                                                    result: value.get_type(),
+                                                },
+                                                line,
+                                                column,
+                                            }])
+                                        }
                     }
                 }
                 IdentifierKind::Macro => ast.err("Macro not allowed here"),
@@ -119,11 +138,13 @@ impl Interpreter {
                             parameters,
                             return_type,
                             ..
-                        }) | ItpValue::UnItpedFunction(UnItpedFunctionValue {
+                        })
+                        | ItpValue::UnItpedFunction(UnItpedFunctionValue {
                             parameters,
                             return_type,
                             ..
-                        }) | ItpValue::NativeFunction(NativeFunctionValue {
+                        })
+                        | ItpValue::NativeFunction(NativeFunctionValue {
                             parameters,
                             return_type,
                             ..
@@ -178,10 +199,10 @@ impl Interpreter {
                 let new_scope = Scope::new_child(self.scope.clone());
                 let new_scope = Rc::new(RefCell::new(new_scope));
 
-                for (name, ty) in parameters.parameters.iter() {
+                for (i, (name, ty)) in parameters.parameters.iter().enumerate() {
                     new_scope
                         .borrow_mut()
-                        .set(name.clone(), Rc::new(ItpValue::Temp(ty.clone())))?;
+                        .set(name.clone(), Rc::new(ItpValue::Param(i as u32, ty.clone())))?;
                 }
 
                 let mut interpreted_body = vec![];

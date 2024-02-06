@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Error, Result};
 
-use crate::{parser::ast::ParsedAstKind, tokens::Identifier};
+use crate::tokens::Identifier;
 
 use super::value::{ItpConstantValue, ItpTypeValue};
 
@@ -30,6 +30,7 @@ impl ItpAst {
         match &self.kind {
             ItpAstKind::Constant(value) => value.get_type(),
             ItpAstKind::Variable { result, .. } => result.clone(),
+            ItpAstKind::Param { result, .. } => result.clone(),
             ItpAstKind::Call { result, .. } => result.clone(),
         }
     }
@@ -40,6 +41,11 @@ impl ItpAst {
 pub enum ItpAstKind {
     Constant(ItpConstantValue),
     Variable {
+        name: Identifier,
+        result: ItpTypeValue,
+    },
+    Param {
+        position: u32,
         name: Identifier,
         result: ItpTypeValue,
     },

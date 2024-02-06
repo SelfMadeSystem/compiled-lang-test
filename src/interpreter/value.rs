@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::{
-    parser::ast::{ParsedAst, ParsedAstKind},
+    parser::ast::ParsedAst,
     tokens::Identifier,
 };
 
@@ -9,7 +9,7 @@ use super::ast::ItpAst;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ItpValue {
-    Temp(ItpTypeValue),
+    Param(u32, ItpTypeValue),
     Constant(ItpConstantValue),
     Named(Identifier, ItpTypeValue),
     // Type(TypeValue),
@@ -21,7 +21,7 @@ pub enum ItpValue {
 impl ItpValue {
     pub fn get_type(&self) -> ItpTypeValue {
         match self {
-            ItpValue::Temp(t) => t.clone(),
+            ItpValue::Param(_, t) => t.clone(),
             ItpValue::Constant(c) => c.get_type(),
             ItpValue::Named(_, t) => t.clone(),
             ItpValue::Function(f) => ItpTypeValue::Function {

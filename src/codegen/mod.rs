@@ -1,29 +1,23 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
-
 use crate::interpreter::{
     ast::{ItpAst, ItpAstKind},
-    scope::Scope,
-    value::{BaseFunctionValue, ItpConstantValue, ItpFunctionValue, ItpTypeValue, ItpValue, ToBaseFunctionValue},
+    value::{BaseFunctionValue, ItpConstantValue, ItpTypeValue, ItpValue, ToBaseFunctionValue},
     Interpreter,
 };
 use anyhow::{anyhow, Result};
-use inkwell::values::FloatValue;
-use inkwell::{
-    builder::{Builder, BuilderError},
-    types::FunctionType,
-};
+use inkwell::values::FunctionValue;
+use inkwell::{builder::Builder, types::FunctionType};
 use inkwell::{
     context::Context,
     types::{BasicMetadataTypeEnum, BasicType},
-    values::{BasicMetadataValueEnum, BasicValue, CallSiteValue},
+    values::{BasicMetadataValueEnum, BasicValue},
 };
 use inkwell::{
     execution_engine::JitFunction,
-    values::{AnyValueEnum, BasicValueEnum, GenericValue},
+    values::{AnyValueEnum, BasicValueEnum},
 };
 use inkwell::{
     module::Module,
-    types::{AnyType, AnyTypeEnum, BasicTypeEnum},
+    types::{AnyType, AnyTypeEnum},
     values::AnyValue,
 };
 use inkwell::{AddressSpace, OptimizationLevel};
@@ -53,9 +47,7 @@ fn try_as_basic_metadata_value_enum<'a>(
     }
 }
 
-fn try_as_basic_metadata_type_enum<'a>(
-    ty: AnyTypeEnum<'a>,
-) -> Result<BasicMetadataTypeEnum<'a>> {
+fn try_as_basic_metadata_type_enum<'a>(ty: AnyTypeEnum<'a>) -> Result<BasicMetadataTypeEnum<'a>> {
     match ty {
         AnyTypeEnum::ArrayType(t) => Ok(t.as_basic_type_enum().into()),
         AnyTypeEnum::FloatType(t) => Ok(t.as_basic_type_enum().into()),
@@ -63,7 +55,7 @@ fn try_as_basic_metadata_type_enum<'a>(
         AnyTypeEnum::PointerType(t) => Ok(t.as_basic_type_enum().into()),
         AnyTypeEnum::StructType(t) => Ok(t.as_basic_type_enum().into()),
         AnyTypeEnum::VectorType(t) => Ok(t.as_basic_type_enum().into()),
-        AnyTypeEnum::VoidType(t) => Err(anyhow!("Void type is not a basic metadata type")),
+        AnyTypeEnum::VoidType(_) => Err(anyhow!("Void type is not a basic metadata type")),
         _ => Err(anyhow!("Type is not a basic metadata type")),
     }
 }
@@ -114,19 +106,51 @@ impl<'t> CodeGen<'t> {
     }
 
     fn compile(&'t self, itp: &Interpreter) -> Result<()> {
+        self.declare_functions(itp)?;
+        self.compile_functions(itp)?;
+
+        Ok(())
+    }
+
+    fn declare_functions(&'t self, itp: &Interpreter) -> Result<()> {
         for (name, var) in itp.scope.borrow().bindings.iter() {
             let value = var.as_ref();
             match value {
                 ItpValue::Function(func) => {
                     let func_type = self.func_type(&func.to_base())?;
-                    let function = self.module.add_function(&name, func_type, None);
+                    self.module.add_function(&name, func_type, None);
+                }
+                ItpValue::NativeFunction(func) => {
+                    if func.intrinsic {
+                        continue;
+                    }
+                    let func_type = self.func_type(&func.to_base())?;
+                    self.module.add_function(&name, func_type, None);
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    fn compile_functions(&'t self, itp: &Interpreter) -> Result<()> {
+        for (name, var) in itp.scope.borrow().bindings.iter() {
+            let value = var.as_ref();
+            match value {
+                ItpValue::Function(func) => {
+                    let function = self
+                        .module
+                        .get_function(&name)
+                        .expect("Function not found???");
+
                     let basic_block = self.context.append_basic_block(function, "entry");
 
                     self.builder.position_at_end(basic_block);
 
                     let mut last_value = None;
                     for statement in &func.body {
-                        last_value = Some(self.ast(statement)?);
+                        last_value = Some(self.ast(statement, &function)?);
                     }
 
                     if let Some(last_value) = last_value {
@@ -161,13 +185,6 @@ impl<'t> CodeGen<'t> {
                     } else {
                         self.builder.build_return(None)?;
                     }
-                }
-                ItpValue::NativeFunction(func) => {
-                    if func.intrinsic {
-                        continue;
-                    }
-                    let func_type = self.func_type(&func.to_base())?;
-                    self.module.add_function(&name, func_type, None);
                 }
                 _ => {}
             }
@@ -232,23 +249,33 @@ impl<'t> CodeGen<'t> {
             ItpConstantValue::Bool(b) => {
                 Ok(self.context.bool_type().const_int(*b as u64, false).into())
             }
-            ItpConstantValue::Array(a) => todo!(),
+            ItpConstantValue::Array(_) => todo!(),
         }
     }
 
-    fn ast(&self, statement: &ItpAst) -> Result<AnyValueEnum<'t>> {
+    fn ast(&self, statement: &ItpAst, func: &FunctionValue<'t>) -> Result<AnyValueEnum<'t>> {
         match &statement.kind {
             ItpAstKind::Constant(c) => Ok(self.get_constant(&c)?.as_any_value_enum()),
-            ItpAstKind::Variable { name, result } => todo!(),
+            ItpAstKind::Variable { .. } => todo!(),
+            ItpAstKind::Param { position, .. } => {
+                let arg = func.get_nth_param(*position).ok_or_else(|| {
+                    anyhow!(
+                        "Parameter {} not found in function {}",
+                        position,
+                        func.get_name().to_str().unwrap()
+                    )
+                })?;
+                Ok(arg.as_any_value_enum())
+            }
             ItpAstKind::Call {
                 function,
                 arguments,
-                result,
+                ..
             } => {
                 let mut args = vec![];
 
                 for arg in arguments {
-                    args.push(self.ast(arg)?);
+                    args.push(self.ast(arg, func)?);
                 }
 
                 Ok(self.call(function.name.clone(), &args)?)

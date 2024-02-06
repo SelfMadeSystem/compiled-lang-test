@@ -12,8 +12,10 @@ mod tokens;
 
 fn main() {
     let input = r#"
+(@fn add[a, b] (+ a b))
+
 (@fn main[]
-    (printf "(1 + 2) * 3 = %f\n\0" (* (+ 1.0 2.0) 3.0)))
+    (printf "(1 + 2) * 3 = %f\n\0" (* (add 1.0 2.0) 3.0)))
 "#;
 
     let tokens = Lexer::new(input.to_string()).lex().unwrap();
