@@ -87,13 +87,11 @@ impl Interpreter {
                         ast.error(&format!("Variable {} not found", identifier.name))
                     })?;
                     match value.as_ref() {
-                        ItpValue::Constant(c) => {
-                            Ok(vec![ItpAst {
-                                kind: ItpAstKind::Constant(c.clone()),
-                                line,
-                                column,
-                            }])
-                        }
+                        ItpValue::Constant(c) => Ok(vec![ItpAst {
+                            kind: ItpAstKind::Constant(c.clone()),
+                            line,
+                            column,
+                        }]),
                         ItpValue::Param(i, t) => Ok(vec![ItpAst {
                             kind: ItpAstKind::Param {
                                 position: *i,
@@ -103,16 +101,14 @@ impl Interpreter {
                             line,
                             column,
                         }]),
-                        _ => {
-                                            Ok(vec![ItpAst {
-                                                kind: ItpAstKind::Variable {
-                                                    name: identifier.clone(),
-                                                    result: value.get_type(),
-                                                },
-                                                line,
-                                                column,
-                                            }])
-                                        }
+                        _ => Ok(vec![ItpAst {
+                            kind: ItpAstKind::Variable {
+                                name: identifier.clone(),
+                                result: value.get_type(),
+                            },
+                            line,
+                            column,
+                        }]),
                     }
                 }
                 IdentifierKind::Macro => ast.err("Macro not allowed here"),

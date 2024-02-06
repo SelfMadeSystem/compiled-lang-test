@@ -1,9 +1,6 @@
 use std::collections::HashSet;
 
-use crate::{
-    parser::ast::ParsedAst,
-    tokens::Identifier,
-};
+use crate::{parser::ast::ParsedAst, tokens::Identifier};
 
 use super::ast::ItpAst;
 
