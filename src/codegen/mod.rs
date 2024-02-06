@@ -1,3 +1,5 @@
+use std::{cell::RefCell, collections::HashMap};
+
 use crate::interpreter::{
     ast::{ItpAst, ItpAstKind},
     value::{BaseFunctionValue, ItpConstantValue, ItpTypeValue, ItpValue, ToBaseFunctionValue},
@@ -64,6 +66,7 @@ pub struct CodeGen<'t> {
     context: &'t Context,
     module: Module<'t>,
     builder: Builder<'t>,
+    variables: RefCell<HashMap<String, AnyValueEnum<'t>>>,
 }
 
 impl<'t> CodeGen<'t> {
@@ -75,6 +78,7 @@ impl<'t> CodeGen<'t> {
             context,
             module,
             builder,
+            variables: RefCell::new(HashMap::new()),
         }
     }
 
@@ -139,6 +143,8 @@ impl<'t> CodeGen<'t> {
             let value = var.as_ref();
             match value {
                 ItpValue::Function(func) => {
+                    self.variables.borrow_mut().clear();
+
                     let function = self
                         .module
                         .get_function(&name)
@@ -253,10 +259,21 @@ impl<'t> CodeGen<'t> {
         }
     }
 
-    fn ast(&self, statement: &ItpAst, func: &FunctionValue<'t>) -> Result<AnyValueEnum<'t>> {
-        match &statement.kind {
+    fn ast(&self, ast: &ItpAst, func: &FunctionValue<'t>) -> Result<AnyValueEnum<'t>> {
+        match &ast.kind {
             ItpAstKind::Constant(c) => Ok(self.get_constant(&c)?.as_any_value_enum()),
-            ItpAstKind::Variable { .. } => todo!(),
+            ItpAstKind::Variable { name, .. } => {
+                let vars = self.variables.borrow();
+                let value = vars.get(&name.name).ok_or_else(|| {
+                    anyhow!("Variable {} not found in function {}", name.name, func.get_name().to_str().unwrap())
+                })?;
+                Ok(value.clone())
+            },
+            ItpAstKind::SetVariable { name, value } => {
+                let value = self.ast(value, func)?;
+                self.variables.borrow_mut().insert(name.name.clone(), value.clone());
+                Ok(value)
+            }
             ItpAstKind::Param { position, .. } => {
                 let arg = func.get_nth_param(*position).ok_or_else(|| {
                     anyhow!(

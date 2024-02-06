@@ -73,17 +73,19 @@ impl Interpreter {
                 line,
                 column,
             }]),
-            ParsedAstKind::Array(values) => {
-                let mut result = vec![];
-                for value in values {
-                    result.extend(self.interpret_ast(value, scope)?);
-                }
-                Ok(result)
+            ParsedAstKind::Array(_values) => {
+                todo!()
+                // let mut result = vec![];
+                // for value in values {
+                //     result.extend(self.interpret_ast(value, scope)?);
+                // }
+                // Ok(result)
             }
             ParsedAstKind::Identifier(identifier) => match identifier.kind {
                 IdentifierKind::Variable => {
                     let scope = scope.borrow();
                     let value = scope.get(&identifier.name).ok_or_else(|| {
+                        println!("{:#?}", scope.bindings);
                         ast.error(&format!("Variable {} not found", identifier.name))
                     })?;
                     match value.as_ref() {
@@ -121,7 +123,7 @@ impl Interpreter {
                         .get(&name.name)
                         .ok_or_else(|| ast.error(&format!("Macro {} not found", name.name)))?;
 
-                    macro_(args, self)
+                    macro_(args, scope.clone(), self)
                 }
                 IdentifierKind::Variable => {
                     let func = scope
@@ -184,7 +186,13 @@ impl Interpreter {
 
     fn interpret_uninterpreted_functions(&mut self) -> Result<()> {
         let mut new_functions = HashMap::new();
-        for (name, value) in self.scope.clone().borrow().bindings.iter() {
+        let mut unitped_funcs = vec![];
+        for (name, value) in self.scope.borrow().bindings.iter() {
+            if let ItpValue::UnItpedFunction(_) = value.as_ref() {
+                unitped_funcs.push((name.clone(), value.clone()));
+            }
+        }
+        for (name, value) in unitped_funcs.iter() {
             if let ItpValue::UnItpedFunction(UnItpedFunctionValue {
                 name: fn_name,
                 parameters,
@@ -201,6 +209,8 @@ impl Interpreter {
                         .set(name.clone(), Rc::new(ItpValue::Param(i as u32, ty.clone())))?;
                 }
 
+                println!("{:#?}", new_scope.borrow().bindings);
+
                 let mut interpreted_body = vec![];
 
                 for ast in body {
@@ -208,7 +218,7 @@ impl Interpreter {
                 }
 
                 new_functions.insert(
-                    name.clone(),
+                    name.to_owned(),
                     ItpValue::Function(ItpFunctionValue {
                         name: fn_name.clone(),
                         parameters: parameters.clone(),
@@ -220,7 +230,9 @@ impl Interpreter {
         }
 
         for (name, value) in new_functions {
-            self.scope.borrow_mut().replace(name, Rc::new(value))?;
+            self.scope
+                .borrow_mut()
+                .replace(name.to_owned(), Rc::new(value))?;
         }
 
         Ok(())

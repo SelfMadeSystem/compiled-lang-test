@@ -1,4 +1,4 @@
-use crate::tokens::Identifier;
+use crate::{interpreter::value::ItpConstantValue, tokens::Identifier};
 use anyhow::{anyhow, Error, Result};
 
 #[derive(Debug, PartialEq, Clone)]
@@ -20,6 +20,17 @@ impl ParsedAst {
 
     pub fn err<T>(&self, message: &str) -> Result<T> {
         Err(self.error(message))
+    }
+
+    pub fn as_const(&self) -> Result<ItpConstantValue> {
+        match &self.kind {
+            ParsedAstKind::Int(value) => Ok(ItpConstantValue::Int(*value)),
+            ParsedAstKind::Float(value) => Ok(ItpConstantValue::Float(*value)),
+            ParsedAstKind::Bool(value) => Ok(ItpConstantValue::Bool(*value)),
+            ParsedAstKind::Char(value) => Ok(ItpConstantValue::Char(*value)),
+            ParsedAstKind::String(value) => Ok(ItpConstantValue::String(value.clone())),
+            _ => self.err("Expected constant"),
+        }
     }
 
     pub fn as_int(&self) -> Result<i64> {

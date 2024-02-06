@@ -30,6 +30,7 @@ impl ItpAst {
         match &self.kind {
             ItpAstKind::Constant(value) => value.get_type(),
             ItpAstKind::Variable { result, .. } => result.clone(),
+            ItpAstKind::SetVariable { .. } => ItpTypeValue::Void, // assignment has no type
             ItpAstKind::Param { result, .. } => result.clone(),
             ItpAstKind::Call { result, .. } => result.clone(),
         }
@@ -43,6 +44,10 @@ pub enum ItpAstKind {
     Variable {
         name: Identifier,
         result: ItpTypeValue,
+    },
+    SetVariable {
+        name: Identifier,
+        value: Box<ItpAst>,
     },
     Param {
         position: u32,

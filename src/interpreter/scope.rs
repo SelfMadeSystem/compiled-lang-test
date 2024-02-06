@@ -48,6 +48,10 @@ impl Scope {
 
     pub fn replace(&mut self, name: String, value: Rc<ItpValue>) -> Result<()> {
         if self.bindings.contains_key(&name) {
+            let ty = self.bindings.get(&name).unwrap().get_type();
+            if ty != value.get_type() {
+                return Err(anyhow!("Variable already defined with different type"));
+            }
             self.bindings.insert(name, value);
             return Ok(());
         }
@@ -57,5 +61,19 @@ impl Scope {
         }
 
         Err(anyhow!("Variable not defined"))
+    }
+
+    pub fn set_or_replace(&mut self, name: String, value: Rc<ItpValue>) -> Result<()> {
+        // first try to replace
+        if let Err(e) = self.replace(name.clone(), value.clone()) {
+            // if error is because variable is not defined, then set
+            if e.to_string().contains("not defined") {
+                self.set(name, value)
+            } else {
+                Err(e)
+            }
+        } else {
+            Ok(())
+        }
     }
 }

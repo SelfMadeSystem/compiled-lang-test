@@ -12,10 +12,16 @@ mod tokens;
 
 fn main() {
     let input = r#"
-(@fn add[a, b] (+ a b))
+(@fn add[a, b, c]
+    (@set d (+ a b))
+    (@set e (+ d c))
+    e)
 
 (@fn main[]
-    (printf "(1 + 2) * 3 = %f\n\0" (* (add 1.0 2.0) 3.0)))
+    (@set c 6.0)
+    (@set c (add c 4.0 0.0))
+    (@set c (add c 5.0 0.0))
+    (printf "(1 + 2 + 3) * %f = %f\n\0" c (* (add 1.0 2.0 3.0) c)))
 "#;
 
     let tokens = Lexer::new(input.to_string()).lex().unwrap();
@@ -25,6 +31,8 @@ fn main() {
 
     let mut interpreter = Interpreter::new();
     interpreter.interpret(&ast).unwrap();
+
+    println!("{:#?}", interpreter);
 
     println!("=== LLVM IR ===");
     let ir = compile_to_llvm_ir(&interpreter).unwrap();

@@ -1,18 +1,16 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
 use crate::parser::ast::ParsedAst;
 
 use super::{
-    ast::ItpAst,
+    ast::{ItpAst, ItpAstKind},
     scope::Scope,
-    value::{
-        ItpFunctionParameters, ItpFunctionValue, ItpTypeValue, ItpValue, UnItpedFunctionValue,
-    },
+    value::{ItpFunctionParameters, ItpTypeValue, ItpValue, UnItpedFunctionValue},
     Interpreter,
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-pub type Macro = fn(&[ParsedAst], &mut Interpreter) -> Result<Vec<ItpAst>>;
+pub type Macro = fn(&[ParsedAst], Rc<RefCell<Scope>>, &mut Interpreter) -> Result<Vec<ItpAst>>;
 
 macro_rules! add_macro {
     ($macros:ident, $name:expr, $func:expr) => {
@@ -24,12 +22,17 @@ pub fn macros() -> HashMap<String, Macro> {
     let mut macros: HashMap<String, Macro> = HashMap::new();
 
     add_macro!(macros, "fn", fn_macro);
+    add_macro!(macros, "set", set_macro);
 
     macros
 }
 
 /// (@fn name [arg1, arg2] (call arg1) (call arg2))
-fn fn_macro(ast: &[ParsedAst], itpr: &mut Interpreter) -> Result<Vec<ItpAst>> {
+fn fn_macro(
+    ast: &[ParsedAst],
+    scope: Rc<RefCell<Scope>>,
+    _itpr: &mut Interpreter,
+) -> Result<Vec<ItpAst>> {
     let name = ast[0].as_identifier()?;
     let args = ast[1].as_array()?;
     let body = &ast[2..];
@@ -42,6 +45,7 @@ fn fn_macro(ast: &[ParsedAst], itpr: &mut Interpreter) -> Result<Vec<ItpAst>> {
         })
         .collect::<Result<Vec<(String, ItpTypeValue)>>>()?;
 
+    // TODO: Interpret body when scope isn't the global scope
     let function = ItpValue::UnItpedFunction(UnItpedFunctionValue {
         name: name.name.clone(),
         parameters: ItpFunctionParameters {
@@ -54,7 +58,44 @@ fn fn_macro(ast: &[ParsedAst], itpr: &mut Interpreter) -> Result<Vec<ItpAst>> {
 
     let function = Rc::new(function);
 
-    itpr.scope.borrow_mut().set(name.name, function)?;
+    scope.borrow_mut().set(name.name, function)?;
 
     Ok(vec![])
+}
+
+/// (@set name value)
+fn set_macro(
+    ast: &[ParsedAst],
+    scope: Rc<RefCell<Scope>>,
+    itpr: &mut Interpreter,
+) -> Result<Vec<ItpAst>> {
+    if ast.len() != 2 {
+        return Err(anyhow!("Expected 2 arguments"));
+    }
+
+    let name_ast = &ast.get(0).ok_or_else(|| anyhow!("Expected name"))?;
+    let line = name_ast.line;
+    let column = name_ast.column;
+    let name = name_ast.as_identifier()?;
+    let value = ast.get(1).ok_or_else(|| anyhow!("Expected value"))?;
+
+    let value = itpr.interpret_ast(&value, &scope)?;
+
+    if value.len() != 1 {
+        return Err(anyhow!("Expected single value"));
+    }
+
+    scope.borrow_mut().set_or_replace(
+        name.name.to_owned(),
+        Rc::new(ItpValue::Named(name.clone(), value[0].get_type())),
+    )?;
+
+    Ok(vec![ItpAst {
+        kind: ItpAstKind::SetVariable {
+            name,
+            value: Box::new(value[0].clone()),
+        },
+        line,
+        column,
+    }])
 }
