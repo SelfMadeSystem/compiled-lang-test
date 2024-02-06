@@ -8,16 +8,14 @@ use crate::{
 };
 
 use self::{
-    ast::{ItpAst, ItpAstKind},
-    macros::Macro,
-    scope::Scope,
-    value::{IFPCheck, ItpConstantValue, ItpFunctionValue, ItpValue, UnItpedFunctionValue},
+    ast::{ItpAst, ItpAstKind}, macros::Macro, native_fns::add_native_fns, scope::Scope, value::{IFPCheck, ItpConstantValue, ItpFunctionValue, ItpValue, NativeFunctionValue, UnItpedFunctionValue}
 };
 
 pub mod ast;
 pub mod macros;
 pub mod scope;
 pub mod value;
+pub mod native_fns;
 
 #[derive(Debug)]
 pub struct Interpreter {
@@ -27,10 +25,12 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn new() -> Self {
-        Interpreter {
+        let mut me = Interpreter {
             scope: Rc::new(RefCell::new(Scope::new())),
             macros: macros::macros(),
-        }
+        };
+        add_native_fns(&mut me);
+        me
     }
 
     fn interpret_ast(
@@ -120,6 +120,10 @@ impl Interpreter {
                             return_type,
                             ..
                         }) | ItpValue::UnItpedFunction(UnItpedFunctionValue {
+                            parameters,
+                            return_type,
+                            ..
+                        }) | ItpValue::NativeFunction(NativeFunctionValue {
                             parameters,
                             return_type,
                             ..

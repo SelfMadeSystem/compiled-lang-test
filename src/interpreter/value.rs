@@ -15,6 +15,7 @@ pub enum ItpValue {
     // Type(TypeValue),
     Function(ItpFunctionValue),
     UnItpedFunction(UnItpedFunctionValue),
+    NativeFunction(NativeFunctionValue),
 }
 
 impl ItpValue {
@@ -28,6 +29,10 @@ impl ItpValue {
                 return_type: Box::new(f.return_type.clone()),
             },
             ItpValue::UnItpedFunction(f) => ItpTypeValue::Function {
+                parameters: f.parameters.clone(),
+                return_type: Box::new(f.return_type.clone()),
+            },
+            ItpValue::NativeFunction(f) => ItpTypeValue::Function {
                 parameters: f.parameters.clone(),
                 return_type: Box::new(f.return_type.clone()),
             },
@@ -78,6 +83,7 @@ pub enum ItpTypeValue {
         parameters: ItpFunctionParameters,
         return_type: Box<ItpTypeValue>,
     },
+    Void,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -127,4 +133,53 @@ pub struct ItpFunctionValue {
     pub parameters: ItpFunctionParameters,
     pub body: Vec<ItpAst>,
     pub return_type: ItpTypeValue,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct NativeFunctionValue {
+    pub name: String,
+    pub parameters: ItpFunctionParameters,
+    pub return_type: ItpTypeValue,
+    pub intrinsic: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BaseFunctionValue {
+    pub name: String,
+    pub parameters: ItpFunctionParameters,
+    pub return_type: ItpTypeValue,
+}
+
+pub trait ToBaseFunctionValue {
+    fn to_base(&self) -> BaseFunctionValue;
+}
+
+impl ToBaseFunctionValue for ItpFunctionValue {
+    fn to_base(&self) -> BaseFunctionValue {
+        BaseFunctionValue {
+            name: self.name.clone(),
+            parameters: self.parameters.clone(),
+            return_type: self.return_type.clone(),
+        }
+    }
+}
+
+impl ToBaseFunctionValue for UnItpedFunctionValue {
+    fn to_base(&self) -> BaseFunctionValue {
+        BaseFunctionValue {
+            name: self.name.clone(),
+            parameters: self.parameters.clone(),
+            return_type: self.return_type.clone(),
+        }
+    }
+}
+
+impl ToBaseFunctionValue for NativeFunctionValue {
+    fn to_base(&self) -> BaseFunctionValue {
+        BaseFunctionValue {
+            name: self.name.clone(),
+            parameters: self.parameters.clone(),
+            return_type: self.return_type.clone(),
+        }
+    }
 }

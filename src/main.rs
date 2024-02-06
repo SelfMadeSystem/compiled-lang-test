@@ -2,7 +2,9 @@ use interpreter::Interpreter;
 use lexer::Lexer;
 use parser::Parser;
 
-// mod codegen;
+use crate::codegen::{compile_to_llvm_ir, run_jit};
+
+mod codegen;
 mod interpreter;
 mod lexer;
 mod parser;
@@ -10,11 +12,8 @@ mod tokens;
 
 fn main() {
     let input = r#"
-(@fn * [a, b])
-(@fn + [a, b])
-
-(@fn add_times_2[a, b]
-    (* (+ a b) 3.0))
+(@fn main[]
+    (printf "(1 + 2) * 3 = %f\n\0" (* (+ 1.0 2.0) 3.0)))
 "#;
 
     let tokens = Lexer::new(input.to_string()).lex().unwrap();
@@ -25,5 +24,9 @@ fn main() {
     let mut interpreter = Interpreter::new();
     interpreter.interpret(&ast).unwrap();
 
-    println!("{:#?}", interpreter);
+    println!("=== LLVM IR ===");
+    let ir = compile_to_llvm_ir(&interpreter).unwrap();
+    println!("{}", ir);
+    println!("=== Running JIT ===");
+    run_jit(&interpreter).unwrap();
 }
