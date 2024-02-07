@@ -12,16 +12,11 @@ mod tokens;
 
 fn main() {
     let input = r#"
-(@fn fib[a]
-    (@if (== a 0)
-        0
-        (@if (== a 1)
-            1
-            (+ (fib (- a 1)) (fib (- a 2))))))
-
 (@fn main[]
-    (@set n 10)
-    (printf "fib(%f) = %f\n" n (fib n))
+    (@set nums [2, 3, 4])
+    (printf "%f\n" (get nums 0))
+    (printf "%f\n" (get nums 1))
+    (printf "%f\n" (get nums 2))
     1)
 "#;
 
@@ -32,8 +27,6 @@ fn main() {
 
     let mut interpreter = Interpreter::new();
     interpreter.interpret(&ast).unwrap();
-
-    println!("{:#?}", interpreter);
 
     println!("=== LLVM IR ===");
     let ir = compile_to_llvm_ir(&interpreter).unwrap();

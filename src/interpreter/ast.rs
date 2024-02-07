@@ -29,6 +29,13 @@ impl ItpAst {
     pub fn get_type(&self) -> ItpTypeValue {
         match &self.kind {
             ItpAstKind::Constant(value) => value.get_type(),
+            ItpAstKind::Array(values) => {
+                ItpTypeValue::Array(Box::new(if values.is_empty() {
+                    ItpTypeValue::Void
+                } else {
+                    values[0].get_type()
+                }))
+            }
             ItpAstKind::Variable { result, .. } => result.clone(),
             ItpAstKind::SetVariable { .. } => ItpTypeValue::Void,
             ItpAstKind::Conditional { then, else_, .. } => {
@@ -38,6 +45,7 @@ impl ItpAst {
                     then.get_type()
                 }
             }
+            ItpAstKind::Loop { .. } => ItpTypeValue::Void,
             ItpAstKind::Param { result, .. } => result.clone(),
             ItpAstKind::Call { result, .. } => result.clone(),
         }
@@ -48,6 +56,7 @@ impl ItpAst {
 #[derive(Debug, PartialEq, Clone)]
 pub enum ItpAstKind {
     Constant(ItpConstantValue),
+    Array(Vec<ItpAst>),
     Variable {
         name: Identifier,
         result: ItpTypeValue,
@@ -65,6 +74,10 @@ pub enum ItpAstKind {
         condition: Box<ItpAst>,
         then: Box<ItpAst>,
         else_: Box<ItpAst>,
+    },
+    Loop {
+        condition: Box<ItpAst>,
+        body: Box<ItpAst>,
     },
     Call {
         function: Identifier,

@@ -96,6 +96,20 @@ pub fn add_native_fns(itp: &mut Interpreter) {
 
     add_native_fn!(
         scope,
+        "get",
+        ItpFunctionParameters {
+            parameters: vec![
+                ("array".to_string(), ItpTypeValue::Array(Box::new(ItpTypeValue::Float))),
+                ("index".to_string(), ItpTypeValue::Float)
+            ],
+            variadic: false,
+        },
+        ItpTypeValue::Bool,
+        true,
+    );
+
+    add_native_fn!(
+        scope,
         "printf",
         ItpFunctionParameters {
             parameters: vec![("format".to_string(), ItpTypeValue::String)],

@@ -1,5 +1,8 @@
 use anyhow::{anyhow, Result};
-use inkwell::values::AnyValueEnum;
+use inkwell::{
+    values::{AnyValue, AnyValueEnum, AsValueRef, PointerValue},
+    AddressSpace,
+};
 
 use super::CodeGen;
 
@@ -142,6 +145,40 @@ pub(crate) fn check_intrinsic_fn<'a>(
             match result {
                 Ok(result) => Ok(Some(AnyValueEnum::IntValue(result))),
                 Err(err) => Err(anyhow!(err)),
+            }
+        }
+        "get" => {
+            let array = params
+                .get(0)
+                .ok_or_else(|| anyhow!("Expected first parameter for 'get' function"))?;
+            let index = params
+                .get(1)
+                .ok_or_else(|| anyhow!("Expected second parameter for 'get' function"))?;
+
+            match array {
+                AnyValueEnum::PointerValue(array) => {
+                    let index = match index {
+                        AnyValueEnum::FloatValue(index) => index,
+                        _ => return Err(anyhow!("Expected float for index of 'get' function")),
+                    };
+
+                    let index = codegen.builder.build_float_to_unsigned_int(
+                        *index,
+                        codegen.context.i64_type(),
+                        "index",
+                    )?;
+
+                    let result =
+                        unsafe { codegen.builder.build_gep(*array, &[index], "elementptr")? };
+
+                    let result = codegen.builder.build_load(result, "element")?;
+
+                    Ok(Some(result.as_any_value_enum()))
+                }
+                a => Err(anyhow!(
+                    "Expected pointer for first parameter of 'get' function. Got {:?}",
+                    a
+                )),
             }
         }
         _ => Ok(None),

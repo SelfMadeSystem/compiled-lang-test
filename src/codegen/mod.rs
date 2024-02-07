@@ -6,7 +6,10 @@ use crate::interpreter::{
     Interpreter,
 };
 use anyhow::{anyhow, Result};
-use inkwell::{builder::Builder, types::FunctionType};
+use inkwell::{
+    builder::Builder,
+    types::{FunctionType, PointerType},
+};
 use inkwell::{
     context::Context,
     types::{BasicMetadataTypeEnum, BasicType},
@@ -185,7 +188,7 @@ impl<'t> CodeGen<'t> {
 
                     let mut last_value = None;
                     for statement in &func.body {
-                        last_value = Some(self.ast(statement, &function)?);
+                        last_value = self.ast(statement, &function)?;
                     }
 
                     if let Some(last_value) = last_value {
@@ -284,13 +287,41 @@ impl<'t> CodeGen<'t> {
             ItpConstantValue::Bool(b) => {
                 Ok(self.context.bool_type().const_int(*b as u64, false).into())
             }
-            ItpConstantValue::Array(_) => todo!(),
+            ItpConstantValue::Array(a) => {
+                let mut values = vec![];
+                for value in a {
+                    match value {
+                        ItpValue::Constant(c) => {
+                            values.push(self.get_constant(c)?.into_float_value());
+                            // TODO: Add support for other types
+                        }
+                        _ => {
+                            return Err(anyhow!("Array value is not a constant"));
+                        }
+                    }
+                }
+                let array_value = self.context.f64_type().const_array(&values);
+                Ok(array_value.as_basic_value_enum())
+            }
         }
     }
 
-    fn ast(&self, ast: &ItpAst, func: &FunctionValue<'t>) -> Result<AnyValueEnum<'t>> {
+    fn ast(&self, ast: &ItpAst, func: &FunctionValue<'t>) -> Result<Option<AnyValueEnum<'t>>> {
         match &ast.kind {
-            ItpAstKind::Constant(c) => Ok(self.get_constant(&c)?.as_any_value_enum()),
+            ItpAstKind::Constant(c) => Ok(Some(self.get_constant(&c)?.as_any_value_enum())),
+            ItpAstKind::Array(arr) => {
+                let mut values = vec![];
+                for value in arr {
+                    values.push(
+                        self.ast(value, func)?
+                            .ok_or_else(|| anyhow!("Value not found for array"))?
+                            .into_float_value(), // TODO: Add support for other types
+                    );
+                }
+                let ty = self.context.f64_type();
+
+                Ok(Some(ty.const_array(&values).as_any_value_enum()))
+            }
             ItpAstKind::Variable { name, .. } => {
                 let vars = self.variables.borrow();
                 let value = vars.get(&name.name).ok_or_else(|| {
@@ -300,14 +331,31 @@ impl<'t> CodeGen<'t> {
                         func.get_name().to_str().unwrap()
                     )
                 })?;
-                let value = self
-                    .builder
-                    .build_load(*value, "load")
-                    .map_err(|err| anyhow!(err))?;
-                Ok(value.as_any_value_enum())
+
+                // don't deref if it's a pointer to an array or a pointer to a
+                // pointer to an array etc.
+                fn shouldnt_deref(ptr: PointerType) -> bool {
+                    let ty = ptr.get_element_type();
+                    if ty.is_pointer_type() {
+                        shouldnt_deref(ty.into_pointer_type())
+                    } else {
+                        ty.is_array_type()
+                    }
+                }
+                let value = if shouldnt_deref(value.get_type()) {
+                    value.as_any_value_enum()
+                } else {
+                    self.builder
+                        .build_load(*value, "load")
+                        .map_err(|err| anyhow!(err))?
+                        .as_any_value_enum()
+                };
+                Ok(Some(value))
             }
             ItpAstKind::SetVariable { name, value } => {
-                let value = self.ast(value, func)?;
+                let value = self
+                    .ast(value, func)?
+                    .ok_or_else(|| anyhow!("Value not found for variable {}", name.name))?;
                 if self.variables.borrow().contains_key(&name.name) {
                     let b = self.variables.borrow();
                     let var = b.get(&name.name).unwrap();
@@ -326,7 +374,7 @@ impl<'t> CodeGen<'t> {
                         .borrow_mut()
                         .insert(name.name.clone(), alloca);
                 }
-                Ok(value)
+                Ok(Some(value))
             }
             ItpAstKind::Param { position, .. } => {
                 let arg = func.get_nth_param(*position).ok_or_else(|| {
@@ -336,7 +384,7 @@ impl<'t> CodeGen<'t> {
                         func.get_name().to_str().unwrap()
                     )
                 })?;
-                Ok(arg.as_any_value_enum())
+                Ok(Some(arg.as_any_value_enum()))
             }
             ItpAstKind::Conditional {
                 condition,
@@ -344,8 +392,7 @@ impl<'t> CodeGen<'t> {
                 else_,
             } => {
                 let condition = self.ast(condition, func)?;
-                let AnyValueEnum::IntValue(condition) = condition
-                else {
+                let Some(AnyValueEnum::IntValue(condition)) = condition else {
                     return Err(anyhow!("Condition is not an integer"));
                 };
 
@@ -384,45 +431,94 @@ impl<'t> CodeGen<'t> {
                 let else_block = self.builder.get_insert_block().unwrap();
 
                 self.builder.position_at_end(merge_block);
-                match (then_value, else_value) {
-                    (AnyValueEnum::ArrayValue(a), AnyValueEnum::ArrayValue(b)) => {
-                        let phi = self.builder.build_phi(a.get_type(), "iftmp")
-                            .map_err(|err| anyhow!(err))?;
-                        phi.add_incoming(&[(&a, then_block), (&b, else_block)]);
-                        Ok(phi.as_any_value_enum())
+                if let (Some(then_value), Some(else_value)) = (then_value, else_value) {
+                    match (then_value, else_value) {
+                        (AnyValueEnum::ArrayValue(a), AnyValueEnum::ArrayValue(b)) => {
+                            let phi = self
+                                .builder
+                                .build_phi(a.get_type(), "iftmp")
+                                .map_err(|err| anyhow!(err))?;
+                            phi.add_incoming(&[(&a, then_block), (&b, else_block)]);
+                            Ok(Some(phi.as_any_value_enum()))
+                        }
+                        (AnyValueEnum::IntValue(a), AnyValueEnum::IntValue(b)) => {
+                            let phi = self
+                                .builder
+                                .build_phi(a.get_type(), "iftmp")
+                                .map_err(|err| anyhow!(err))?;
+                            phi.add_incoming(&[(&a, then_block), (&b, else_block)]);
+                            Ok(Some(phi.as_any_value_enum()))
+                        }
+                        (AnyValueEnum::FloatValue(a), AnyValueEnum::FloatValue(b)) => {
+                            let phi = self
+                                .builder
+                                .build_phi(a.get_type(), "iftmp")
+                                .map_err(|err| anyhow!(err))?;
+                            phi.add_incoming(&[(&a, then_block), (&b, else_block)]);
+                            Ok(Some(phi.as_any_value_enum()))
+                        }
+                        (AnyValueEnum::PointerValue(a), AnyValueEnum::PointerValue(b)) => {
+                            let phi = self
+                                .builder
+                                .build_phi(a.get_type(), "iftmp")
+                                .map_err(|err| anyhow!(err))?;
+                            phi.add_incoming(&[(&a, then_block), (&b, else_block)]);
+                            Ok(Some(phi.as_any_value_enum()))
+                        }
+                        (AnyValueEnum::StructValue(a), AnyValueEnum::StructValue(b)) => {
+                            let phi = self
+                                .builder
+                                .build_phi(a.get_type(), "iftmp")
+                                .map_err(|err| anyhow!(err))?;
+                            phi.add_incoming(&[(&a, then_block), (&b, else_block)]);
+                            Ok(Some(phi.as_any_value_enum()))
+                        }
+                        (AnyValueEnum::VectorValue(a), AnyValueEnum::VectorValue(b)) => {
+                            let phi = self
+                                .builder
+                                .build_phi(a.get_type(), "iftmp")
+                                .map_err(|err| anyhow!(err))?;
+                            phi.add_incoming(&[(&a, then_block), (&b, else_block)]);
+                            Ok(Some(phi.as_any_value_enum()))
+                        }
+                        _ => Ok(None),
                     }
-                    (AnyValueEnum::IntValue(a), AnyValueEnum::IntValue(b)) => {
-                        let phi = self.builder.build_phi(a.get_type(), "iftmp")
-                            .map_err(|err| anyhow!(err))?;
-                        phi.add_incoming(&[(&a, then_block), (&b, else_block)]);
-                        Ok(phi.as_any_value_enum())
-                    }
-                    (AnyValueEnum::FloatValue(a), AnyValueEnum::FloatValue(b)) => {
-                        let phi = self.builder.build_phi(a.get_type(), "iftmp")
-                            .map_err(|err| anyhow!(err))?;
-                        phi.add_incoming(&[(&a, then_block), (&b, else_block)]);
-                        Ok(phi.as_any_value_enum())
-                    }
-                    (AnyValueEnum::PointerValue(a), AnyValueEnum::PointerValue(b)) => {
-                        let phi = self.builder.build_phi(a.get_type(), "iftmp")
-                            .map_err(|err| anyhow!(err))?;
-                        phi.add_incoming(&[(&a, then_block), (&b, else_block)]);
-                        Ok(phi.as_any_value_enum())
-                    }
-                    (AnyValueEnum::StructValue(a), AnyValueEnum::StructValue(b)) => {
-                        let phi = self.builder.build_phi(a.get_type(), "iftmp")
-                            .map_err(|err| anyhow!(err))?;
-                        phi.add_incoming(&[(&a, then_block), (&b, else_block)]);
-                        Ok(phi.as_any_value_enum())
-                    }
-                    (AnyValueEnum::VectorValue(a), AnyValueEnum::VectorValue(b)) => {
-                        let phi = self.builder.build_phi(a.get_type(), "iftmp")
-                            .map_err(|err| anyhow!(err))?;
-                        phi.add_incoming(&[(&a, then_block), (&b, else_block)]);
-                        Ok(phi.as_any_value_enum())
-                    }
-                    _ => Err(anyhow!("Incompatible types in conditional")),
+                } else {
+                    Ok(None)
                 }
+            }
+            ItpAstKind::Loop { condition, body } => {
+                let function = self
+                    .builder
+                    .get_insert_block()
+                    .unwrap()
+                    .get_parent()
+                    .unwrap();
+                let preheader_block = self.builder.get_insert_block().unwrap();
+                let loop_block = self.context.append_basic_block(function, "loop");
+                let after_block = self.context.append_basic_block(function, "afterloop");
+
+                self.builder
+                    .build_unconditional_branch(loop_block)
+                    .map_err(|err| anyhow!(err))?;
+
+                self.builder.position_at_end(loop_block);
+                let condition = self.ast(condition, func)?;
+                let Some(AnyValueEnum::IntValue(condition)) = condition else {
+                    return Err(anyhow!("Condition is not an integer"));
+                };
+
+                if condition.get_type() != self.context.bool_type() {
+                    return Err(anyhow!("Condition is not a boolean"));
+                }
+
+                let body = self.ast(body, func)?;
+                self.builder
+                    .build_conditional_branch(condition, loop_block, after_block)
+                    .map_err(|err| anyhow!(err))?;
+
+                self.builder.position_at_end(after_block);
+                Ok(body)
             }
             ItpAstKind::Call {
                 function,
@@ -432,10 +528,13 @@ impl<'t> CodeGen<'t> {
                 let mut args = vec![];
 
                 for arg in arguments {
-                    args.push(self.ast(arg, func)?);
+                    args.push(
+                        self.ast(arg, func)?
+                            .ok_or_else(|| anyhow!("Argument not found for function call"))?,
+                    );
                 }
 
-                Ok(self.call(function.name.clone(), &args)?)
+                Ok(Some(self.call(function.name.clone(), &args)?))
             }
         }
     }

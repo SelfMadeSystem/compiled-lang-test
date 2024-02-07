@@ -73,13 +73,16 @@ impl Interpreter {
                 line,
                 column,
             }]),
-            ParsedAstKind::Array(_values) => {
-                todo!()
-                // let mut result = vec![];
-                // for value in values {
-                //     result.extend(self.interpret_ast(value, scope)?);
-                // }
-                // Ok(result)
+            ParsedAstKind::Array(values) => {
+                let mut result = vec![];
+                for value in values {
+                    result.extend(self.interpret_ast(value, scope)?);
+                }
+                Ok(vec![ItpAst {
+                    kind: ItpAstKind::Array(result),
+                    line,
+                    column,
+                }])
             }
             ParsedAstKind::Identifier(identifier) => match identifier.kind {
                 IdentifierKind::Variable => {

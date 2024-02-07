@@ -24,6 +24,7 @@ pub fn macros() -> HashMap<String, Macro> {
     add_macro!(macros, "fn", fn_macro);
     add_macro!(macros, "set", set_macro);
     add_macro!(macros, "if", if_macro);
+    add_macro!(macros, "while", while_macro);
 
     macros
 }
@@ -138,6 +139,42 @@ fn if_macro(
             condition: Box::new(condition[0].clone()),
             then: Box::new(then[0].clone()),
             else_: Box::new(else_[0].clone()),
+        },
+        line,
+        column,
+    }])
+}
+
+/// (@while condition body)
+fn while_macro(
+    ast: &[ParsedAst],
+    scope: Rc<RefCell<Scope>>,
+    itpr: &mut Interpreter,
+) -> Result<Vec<ItpAst>> {
+    if ast.len() != 2 {
+        return Err(anyhow!("Expected 2 arguments"));
+    }
+
+    let condition = ast.get(0).ok_or_else(|| anyhow!("Expected condition"))?;
+    let line = condition.line;
+    let column = condition.column;
+    let body = ast.get(1).ok_or_else(|| anyhow!("Expected body"))?;
+
+    let condition = itpr.interpret_ast(&condition, &scope)?;
+    let body = itpr.interpret_ast(&body, &scope)?;
+
+    if condition.len() != 1 {
+        return Err(anyhow!("Expected single condition"));
+    }
+
+    if body.len() != 1 {
+        return Err(anyhow!("Expected single body"));
+    }
+
+    Ok(vec![ItpAst {
+        kind: ItpAstKind::Loop {
+            condition: Box::new(condition[0].clone()),
+            body: Box::new(body[0].clone()),
         },
         line,
         column,
