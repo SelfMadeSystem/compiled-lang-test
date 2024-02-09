@@ -51,6 +51,7 @@ fn fn_macro(
     let function = ItpValue::UnItpedFunction(UnItpedFunctionValue {
         name: name.name.clone(),
         parameters: ItpFunctionParameters {
+            generics: vec![],
             parameters: args,
             variadic: false,
         },

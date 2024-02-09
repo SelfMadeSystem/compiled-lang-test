@@ -158,18 +158,24 @@ pub(crate) fn check_intrinsic_fn<'a>(
             match array {
                 AnyValueEnum::PointerValue(array) => {
                     let index = match index {
-                        AnyValueEnum::FloatValue(index) => index,
-                        _ => return Err(anyhow!("Expected float for index of 'get' function")),
+                        AnyValueEnum::FloatValue(index) => {
+                            codegen.builder.build_float_to_unsigned_int(
+                                *index,
+                                codegen.context.i64_type(),
+                                "index",
+                            )?
+                        }
+                        AnyValueEnum::IntValue(index) => *index,
+                        _ => return Err(anyhow!("Expected number for index of 'get' function")),
                     };
 
-                    let index = codegen.builder.build_float_to_unsigned_int(
-                        *index,
-                        codegen.context.i64_type(),
-                        "index",
-                    )?;
-
-                    let result =
-                        unsafe { codegen.builder.build_gep(*array, &[index], "elementptr")? };
+                    let result = unsafe {
+                        codegen.builder.build_gep(
+                            *array,
+                            &[codegen.context.i64_type().const_zero(), index],
+                            "elementptr",
+                        )
+                    }?;
 
                     let result = codegen.builder.build_load(result, "element")?;
 

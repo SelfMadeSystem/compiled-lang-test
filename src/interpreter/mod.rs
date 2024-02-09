@@ -137,16 +137,19 @@ impl Interpreter {
                         ItpValue::Function(ItpFunctionValue {
                             parameters,
                             return_type,
+                            name: fn_name,
                             ..
                         })
                         | ItpValue::UnItpedFunction(UnItpedFunctionValue {
                             parameters,
                             return_type,
+                            name: fn_name,
                             ..
                         })
                         | ItpValue::NativeFunction(NativeFunctionValue {
                             parameters,
                             return_type,
+                            name: fn_name,
                             ..
                         }) => {
                             let new_scope = Scope::new_child(scope.clone());
@@ -156,15 +159,15 @@ impl Interpreter {
                                 result.extend(self.interpret_ast(arg, &new_scope)?);
                             }
 
-                            match parameters
+                            let generics = match parameters
                                 .check_params(&result.iter().map(|a| a.get_type()).collect())
                             {
-                                IFPCheck::Ok => Ok(()),
+                                IFPCheck::Ok(generics) => Ok(generics),
                                 IFPCheck::NotEnoughParameters => ast.err("Not enough parameters"),
                                 IFPCheck::TooManyParameters => ast.err("Too many parameters"),
-                                IFPCheck::WrongType(i, got, expected) => ast.err(&format!(
-                                    "Wrong type for parameter {}: got {:?}, expected {:?}",
-                                    i, got, expected
+                                IFPCheck::WrongType(i, expected, got) => ast.err(&format!(
+                                    "Wrong type for {}, parameter {}: got {:?}, expected {:?}",
+                                    fn_name, i, got, expected
                                 )),
                             }?;
 
@@ -172,7 +175,7 @@ impl Interpreter {
                                 kind: ItpAstKind::Call {
                                     function: name.clone(),
                                     arguments: result,
-                                    result: return_type.clone(),
+                                    result: return_type.replace_generics(&generics),
                                 },
                                 line,
                                 column,

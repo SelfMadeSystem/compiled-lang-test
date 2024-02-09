@@ -264,8 +264,12 @@ impl<'t> CodeGen<'t> {
                 .as_any_type_enum(),
             ItpTypeValue::Char => self.context.i8_type().as_any_type_enum(),
             ItpTypeValue::Bool => self.context.bool_type().as_any_type_enum(),
-            ItpTypeValue::Array(_) => todo!(),
+            ItpTypeValue::Array(t) => {
+                let ty = self.type_of(t);
+                ty.into_pointer_type().as_any_type_enum()
+            }
             ItpTypeValue::Function { .. } => todo!(),
+            ItpTypeValue::Generic(_) => todo!(),
             ItpTypeValue::Void => self.context.void_type().as_any_type_enum(),
         }
     }

@@ -28,6 +28,7 @@ pub fn add_native_fns(itp: &mut Interpreter) {
         scope,
         "+",
         ItpFunctionParameters {
+            generics: vec![],
             parameters: vec![
                 ("a".to_string(), ItpTypeValue::Float),
                 ("b".to_string(), ItpTypeValue::Float)
@@ -42,6 +43,7 @@ pub fn add_native_fns(itp: &mut Interpreter) {
         scope,
         "-",
         ItpFunctionParameters {
+            generics: vec![],
             parameters: vec![
                 ("a".to_string(), ItpTypeValue::Float),
                 ("b".to_string(), ItpTypeValue::Float)
@@ -56,6 +58,7 @@ pub fn add_native_fns(itp: &mut Interpreter) {
         scope,
         "*",
         ItpFunctionParameters {
+            generics: vec![],
             parameters: vec![
                 ("a".to_string(), ItpTypeValue::Float),
                 ("b".to_string(), ItpTypeValue::Float)
@@ -70,6 +73,7 @@ pub fn add_native_fns(itp: &mut Interpreter) {
         scope,
         "/",
         ItpFunctionParameters {
+            generics: vec![],
             parameters: vec![
                 ("a".to_string(), ItpTypeValue::Float),
                 ("b".to_string(), ItpTypeValue::Float)
@@ -84,9 +88,10 @@ pub fn add_native_fns(itp: &mut Interpreter) {
         scope,
         "==",
         ItpFunctionParameters {
+            generics: vec!["T".to_string()],
             parameters: vec![
-                ("a".to_string(), ItpTypeValue::Float),
-                ("b".to_string(), ItpTypeValue::Float)
+                ("a".to_string(), ItpTypeValue::generic("T")),
+                ("b".to_string(), ItpTypeValue::generic("T"))
             ],
             variadic: false,
         },
@@ -98,13 +103,17 @@ pub fn add_native_fns(itp: &mut Interpreter) {
         scope,
         "get",
         ItpFunctionParameters {
+            generics: vec!["T".to_string()],
             parameters: vec![
-                ("array".to_string(), ItpTypeValue::Array(Box::new(ItpTypeValue::Float))),
+                (
+                    "array".to_string(),
+                    ItpTypeValue::Array(Box::new(ItpTypeValue::generic("T")))
+                ),
                 ("index".to_string(), ItpTypeValue::Float)
             ],
             variadic: false,
         },
-        ItpTypeValue::Bool,
+        ItpTypeValue::generic("T"),
         true,
     );
 
@@ -112,6 +121,7 @@ pub fn add_native_fns(itp: &mut Interpreter) {
         scope,
         "printf",
         ItpFunctionParameters {
+            generics: vec![],
             parameters: vec![("format".to_string(), ItpTypeValue::String)],
             variadic: true,
         },

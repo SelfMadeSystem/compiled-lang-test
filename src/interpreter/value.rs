@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::{parser::ast::ParsedAst, tokens::Identifier};
 
@@ -75,25 +75,86 @@ pub enum ItpTypeValue {
     String,
     Char,
     Bool,
-    Array(Box<ItpTypeValue>),
+    Array(Box<ItpTypeValue>), // TODO: Absolutely should include length here
     Function {
         parameters: ItpFunctionParameters,
         return_type: Box<ItpTypeValue>,
     },
+    Generic(String),
     Void,
+}
+
+impl ItpTypeValue {
+    pub fn generic(name: &str) -> ItpTypeValue {
+        ItpTypeValue::Generic(name.to_string())
+    }
+
+    pub fn replace_generics(&self, generics: &HashMap<String, ItpTypeValue>) -> ItpTypeValue {
+        match self {
+            ItpTypeValue::Generic(name) => match generics.get(name) {
+                Some(t) => t.clone(),
+                None => self.clone(),
+            },
+            ItpTypeValue::Array(t) => ItpTypeValue::Array(Box::new(t.replace_generics(generics))),
+            ItpTypeValue::Function {
+                parameters,
+                return_type,
+            } => ItpTypeValue::Function {
+                parameters: parameters.clone(),
+                return_type: Box::new(return_type.replace_generics(generics)),
+            },
+            _ => self.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ItpFunctionParameters {
+    pub generics: Vec<String>,
     pub parameters: Vec<(String, ItpTypeValue)>,
     pub variadic: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum IFPCheck {
-    Ok,
+    Ok(HashMap<String, ItpTypeValue>),
     NotEnoughParameters,
     TooManyParameters,
     WrongType(usize, ItpTypeValue, ItpTypeValue),
+}
+
+fn check_param(
+    generics: &mut HashMap<String, ItpTypeValue>,
+    i: usize,
+    param: &ItpTypeValue,
+    value: &ItpTypeValue,
+) -> Result<(), IFPCheck> {
+    match param {
+        ItpTypeValue::Generic(name) => match generics.get(name) {
+            None => {
+                generics.insert(name.clone(), value.clone());
+                Ok(())
+            }
+            Some(g) => {
+                if g == value {
+                    Ok(())
+                } else {
+                    Err(IFPCheck::WrongType(i, param.clone(), value.clone()))
+                }
+            }
+        },
+        ItpTypeValue::Array(t) => match value {
+            ItpTypeValue::Array(v) => check_param(generics, i, t, v),
+            _ => Err(IFPCheck::WrongType(i, param.clone(), value.clone())),
+        },
+        _ => {
+            if param == value {
+                Ok(())
+            } else {
+                Err(IFPCheck::WrongType(i, param.clone(), value.clone()))
+            }
+        }
+    }
 }
 
 impl ItpFunctionParameters {
@@ -106,13 +167,15 @@ impl ItpFunctionParameters {
             return IFPCheck::TooManyParameters;
         }
 
+        let mut generics = HashMap::new();
+
         for (i, (_, t)) in self.parameters.iter().enumerate() {
-            if params[i] != *t {
-                return IFPCheck::WrongType(i, params[i].clone(), t.clone());
+            if let Err(r) = check_param(&mut generics, i, t, &params[i]) {
+                return r;
             }
         }
 
-        IFPCheck::Ok
+        IFPCheck::Ok(generics)
     }
 }
 
